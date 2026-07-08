@@ -1,0 +1,19 @@
+# LaTeX build outputs
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
+
+# Local editor and OS files
+.DS_Store
+Thumbs.db
+
+# Generated submission/export archives
+paper/*.zip
