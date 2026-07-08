@@ -43,6 +43,23 @@ The English manuscript exists in only one place. The bilingual draft reads Engli
 
 For the Chinese and bilingual drafts, use a LaTeX engine with CJK support, such as XeLaTeX.
 
+## VSCode
+
+Install the recommended VSCode extension:
+
+```text
+James-Yu.latex-workshop
+```
+
+The repository includes workspace settings under `.vscode/`.
+
+Recommended recipes:
+
+- English draft: `latexmk (pdfLaTeX)`
+- Chinese and bilingual drafts: `latexmk (XeLaTeX)`
+
+In VSCode, run `LaTeX Workshop: Build with recipe` and choose the matching recipe for the current entry file.
+
 ## Packaging
 
 Generate the English Overleaf upload package:

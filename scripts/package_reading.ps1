@@ -20,18 +20,23 @@ if (Test-Path $exportDir) {
 }
 
 New-Item -ItemType Directory -Force $exportDir | Out-Null
-Copy-Item -Path (Join-Path $readingDir "*") -Destination $exportDir -Recurse
+Copy-Item -Path (Join-Path $readingDir "main_zh.tex") -Destination $exportDir
+Copy-Item -Path (Join-Path $readingDir "main_bilingual.tex") -Destination $exportDir
+Copy-Item -Path (Join-Path $readingDir "sections_zh") -Destination (Join-Path $exportDir "sections_zh") -Recurse
 Copy-Item -Path (Join-Path $englishDir "sections") -Destination (Join-Path $exportDir "sections") -Recurse
 Copy-Item -Path (Join-Path $englishDir "references.bib") -Destination (Join-Path $exportDir "references.bib")
 
 $mainZh = Join-Path $exportDir "main_zh.tex"
 $mainBilingual = Join-Path $exportDir "main_bilingual.tex"
 
-(Get-Content $mainZh -Raw -Encoding UTF8).Replace("../dvcl/references", "references") |
+(Get-Content $mainZh -Raw -Encoding UTF8).
+    Replace("../../dvcl/references", "references").
+    Replace("../dvcl/references", "references") |
     Set-Content $mainZh -Encoding UTF8
 
 (Get-Content $mainBilingual -Raw -Encoding UTF8).
     Replace("../dvcl/sections", "sections").
+    Replace("../../dvcl/references", "references").
     Replace("../dvcl/references", "references") |
     Set-Content $mainBilingual -Encoding UTF8
 

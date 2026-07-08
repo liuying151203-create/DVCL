@@ -1,27 +1,197 @@
 \section{实验}
 \label{sec:experiments-zh}
 
-实验部分用于验证 DVCL 在结构攻击下的鲁棒性。
-论文从数据集、基线方法、攻击设置、实现细节、整体性能、目标攻击结果、消融实验和参数敏感性等方面展开。
+\subsection{数据集}
 
-\subsection{实验设置}
+本文在四个异构图基准数据集上评估 DVCL：ACM、DBLP、AMiner 和 IMDB。每个数据集都包含多种节点类型和关系类型，任务是在目标节点类型上进行半监督节点分类。按照 HSeCo 的设置，本文使用数据集特定元路径为目标节点构造语义邻域。表~\ref{tab:dataset_settings_zh} 总结了每个数据集使用的目标节点类型和元路径。
 
-数据集部分说明使用的异构图基准、节点类型、边类型、特征维度和分类任务。
-基线方法包括常规异构图神经网络、同构图鲁棒防御方法以及面向异构图的防御方法。
-攻击设置区分干净图、全局攻击和目标攻击，以评估模型在不同威胁强度下的表现。
+\begin{table}[t]
+\centering
+\caption{数据集设置。}
+\label{tab:dataset_settings_zh}
+\begin{tabular}{c|c|c}
+\hline
+数据集 & 目标节点类型 & 元路径 \\
+\hline
+ACM & Paper & P-A-P, P-F-P \\
+DBLP & Author & A-P-A, A-P-C-P-A, A-P-T-P-A \\
+AMiner & Paper & P-A-P, P-R-P \\
+IMDB & Movie & M-D-M, M-A-M \\
+\hline
+\end{tabular}
+\end{table}
 
-\subsection{主要结果}
+当前已经完成的主要实验集中在 ACM 数据集上，其中全局结构攻击和目标攻击均使用五个随机种子进行评估。DBLP 的结果作为单种子补充证据。AMiner 和 IMDB 保留在基准协议中，并将在下一轮实验中补齐。
 
-整体性能实验比较不同方法在多种扰动比例下的节点分类结果。
-预期结论是：当结构扰动增强时，纯拓扑依赖方法性能下降更明显，而 DVCL 能通过特征诱导视图和拓扑净化机制保持更稳定的分类性能。
+\subsection{基线方法}
 
-\subsection{目标攻击、消融和参数分析}
+主要直接基线是 HSeCo，因为 DVCL 建立在 HSeCo 的语义拓扑学习流程之上，目标是检验加入特征诱导视图和跨视图对比对齐之后，模型鲁棒性是否进一步提升。本文也将 HSeCo 放在其他相关异构图学习和鲁棒图学习方法的背景下讨论，包括 HAN、HGT、MAGNN、HeCo、RoHe、HeteGuard、GCN-Jaccard、RGCN、Pro-GNN、GNNGuard 和 SimP-GCN。
 
-目标攻击实验进一步验证模型在针对特定节点攻击下的鲁棒性。
-消融实验用于拆分 DVCL 的关键组件，例如去掉特征视图、去掉拓扑净化或去掉跨视图对比目标，观察性能变化。
-参数敏感性分析关注 KNN 邻居数、过滤阈值、对比损失权重等超参数对结果的影响。
+在当前稿件中，数值比较直接使用 HSeCo 作为基线。DVCL 的不同变体只用于消融实验和补充分析，而不作为外部基线。
+
+\subsection{攻击设置}
+
+对于全局攻击，本文评估 PRBCD 和 HetePRBCD，扰动率分别为 $5\%$、$10\%$、$15\%$、$20\%$ 和 $25\%$。PRBCD 执行全局结构扰动，而 HetePRBCD 在扰动过程中考虑异构关系类型。无攻击的干净性能也一并报告。
+
+对于目标攻击，本文在 ACM 上使用 FGSM 风格的异构图目标攻击。对于每个随机种子，从测试集中采样 500 个目标 paper 节点。主多种子目标攻击表中的攻击预算设为 $\Delta=3$，攻击会扰动与任务相关的 P-A 边。目标攻击指标只在被选中的目标节点上计算，而不是在整个测试集上计算。
+
+\subsection{实现细节}
+
+为了公平比较，所有模型使用相同的数据划分和攻击产物。除非特别说明，ACM 的每个结果都在五个随机种子上取平均，种子为 1、2、3、4 和 5。最大训练 epoch 数为 200，并使用 early stopping。优化器使用 Adam。
+
+DVCL 的主设置使用原始特征 KNN 视图：即原始目标节点特征、有向 KNN 和 $k=20$。拓扑视图沿用 HSeCo 的语义拓扑构造。两个视图特定表示通过拼接用于分类，并在拓扑视图和特征视图嵌入之间施加跨视图对比损失。本文使用 $\lambda_{\mathrm{HAN}}=1.0$。主调优配置使用 $\lambda_{\mathrm{DVCL}}=0.5$；较早的 $\lambda_{\mathrm{DVCL}}=0.1$ 设置保留在表~\ref{tab:lambda_compare_zh} 中用于对比。
+
+\subsection{整体性能}
+
+表~\ref{tab:overall_global_zh} 报告 ACM 全局攻击主结果。HSeCo 是直接基线。DVCL 使用原始有向 KNN 特征视图，设置 $k=20$ 且 $\lambda_{\mathrm{DVCL}}=0.5$。
+
+\begin{table}[t]
+\centering
+\caption{ACM 全局攻击性能。结果为五个随机种子的 Micro-F1 均值 $\pm$ 标准差。}
+\label{tab:overall_global_zh}
+\begin{tabular}{c|c|c|c|c}
+\hline
+攻击 & 扰动率 & HSeCo & DVCL & $\Delta$ pp \\
+\hline
+Clean & 0\% & $0.8679\pm0.0129$ & $0.8770\pm0.0071$ & +0.91 \\
+PRBCD & 5\% & $0.8491\pm0.0086$ & $0.8732\pm0.0092$ & +2.41 \\
+PRBCD & 10\% & $0.8519\pm0.0080$ & $0.8718\pm0.0077$ & +1.99 \\
+PRBCD & 15\% & $0.8484\pm0.0091$ & $0.8674\pm0.0060$ & +1.90 \\
+PRBCD & 20\% & $0.8530\pm0.0092$ & $0.8660\pm0.0146$ & +1.30 \\
+PRBCD & 25\% & $0.8504\pm0.0092$ & $0.8659\pm0.0082$ & +1.55 \\
+HetePRBCD & 5\% & $0.8530\pm0.0121$ & $0.8762\pm0.0027$ & +2.33 \\
+HetePRBCD & 10\% & $0.8589\pm0.0126$ & $0.8737\pm0.0087$ & +1.48 \\
+HetePRBCD & 15\% & $0.8546\pm0.0070$ & $0.8726\pm0.0046$ & +1.79 \\
+HetePRBCD & 20\% & $0.8548\pm0.0124$ & $0.8700\pm0.0108$ & +1.53 \\
+HetePRBCD & 25\% & $0.8511\pm0.0092$ & $0.8703\pm0.0063$ & +1.92 \\
+\hline
+\end{tabular}
+\end{table}
+
+DVCL 在 ACM 的干净设置和所有受攻击设置上均优于 HSeCo。在十个攻击条件上的平均 Micro-F1 为：HSeCo 0.8525，DVCL 0.8707，平均提升 1.82 个百分点。PRBCD 和 HetePRBCD 下的提升都较为一致，说明特征诱导视图和跨视图对齐能够在 HSeCo 的拓扑语义防御之外进一步提升鲁棒性。
+
+表~\ref{tab:overall_macro_zh} 给出对应的 Macro-F1 比较。Macro-F1 的趋势与 Micro-F1 一致，表明性能提升并非只来自优势类别。
+
+\begin{table}[t]
+\centering
+\caption{ACM 全局攻击 Macro-F1。结果为五个随机种子的均值 $\pm$ 标准差。}
+\label{tab:overall_macro_zh}
+\begin{tabular}{c|c|c|c|c}
+\hline
+攻击 & 扰动率 & HSeCo & DVCL & $\Delta$ pp \\
+\hline
+Clean & 0\% & $0.8654\pm0.0129$ & $0.8739\pm0.0074$ & +0.85 \\
+PRBCD & 5\% & $0.8450\pm0.0090$ & $0.8709\pm0.0085$ & +2.59 \\
+PRBCD & 10\% & $0.8475\pm0.0085$ & $0.8680\pm0.0076$ & +2.05 \\
+PRBCD & 15\% & $0.8446\pm0.0099$ & $0.8639\pm0.0059$ & +1.93 \\
+PRBCD & 20\% & $0.8497\pm0.0100$ & $0.8641\pm0.0148$ & +1.44 \\
+PRBCD & 25\% & $0.8473\pm0.0093$ & $0.8620\pm0.0108$ & +1.47 \\
+HetePRBCD & 5\% & $0.8490\pm0.0125$ & $0.8738\pm0.0041$ & +2.48 \\
+HetePRBCD & 10\% & $0.8557\pm0.0127$ & $0.8706\pm0.0088$ & +1.49 \\
+HetePRBCD & 15\% & $0.8516\pm0.0059$ & $0.8704\pm0.0042$ & +1.88 \\
+HetePRBCD & 20\% & $0.8511\pm0.0124$ & $0.8677\pm0.0109$ & +1.66 \\
+HetePRBCD & 25\% & $0.8467\pm0.0090$ & $0.8668\pm0.0070$ & +2.01 \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{目标攻击结果}
+
+表~\ref{tab:target_attack_zh} 报告攻击预算 $\Delta=3$ 下的 ACM 目标攻击结果。HSeCo 在目标 Micro-F1 上下降 10.16 个百分点，而 DVCL 仅下降 1.16 个百分点。在相同目标攻击设置下，DVCL 的受攻击目标 Micro-F1 比 HSeCo 高 10.00 个百分点。
+
+\begin{table}[t]
+\centering
+\caption{攻击预算 $\Delta=3$ 下的 ACM FGSM 风格目标攻击。结果为五个随机种子的平均值。}
+\label{tab:target_attack_zh}
+\begin{tabular}{c|c|c|c|c}
+\hline
+模型 & 干净目标 Micro-F1 & 受攻击目标 Micro-F1 & 下降 & 受攻击目标 Macro-F1 \\
+\hline
+HSeCo & 0.8624 & 0.7608 & -10.16 pp & 0.7631 \\
+DVCL & 0.8724 & 0.8608 & -1.16 pp & 0.8585 \\
+\hline
+\end{tabular}
+\end{table}
+
+这是当前观察到的 HSeCo 与 DVCL 之间最大的鲁棒性差距。由于目标攻击会直接扰动被选目标节点周围的 P-A 边，拓扑视图会受到较强影响。DVCL 更稳定，是因为原始特征 KNN 视图并不直接依赖被攻击边，能够补偿被污染的语义拓扑。
+
+\subsection{消融实验}
+
+首先比较原始 DVCL 设置与调优后的对比学习设置。表~\ref{tab:lambda_compare_zh} 表明，将 $\lambda_{\mathrm{DVCL}}$ 从 0.1 提高到 0.5 后，所有受攻击全局设置均有提升，同时干净性能基本保持不变。
+
+\begin{table}[t]
+\centering
+\caption{ACM 上 HSeCo、原始 DVCL 和调优 DVCL 的比较。数值为 PRBCD 与 HetePRBCD 上的攻击平均 Micro-F1/Macro-F1。}
+\label{tab:lambda_compare_zh}
+\begin{tabular}{c|c|c}
+\hline
+模型 & 攻击 Micro-F1 平均 & 攻击 Macro-F1 平均 \\
+\hline
+HSeCo & 0.8525 & 0.8488 \\
+DVCL, $\lambda_{\mathrm{DVCL}}=0.1$ & 0.8665 & 0.8632 \\
+DVCL, $\lambda_{\mathrm{DVCL}}=0.5$ & 0.8707 & 0.8680 \\
+\hline
+\end{tabular}
+\end{table}
+
+随后，在 $k=20$ 的原始有向 KNN 设置下进行组件消融。表~\ref{tab:component_ablation_zh} 显示，完整 DVCL 优于去掉对比损失的变体，也优于两个单视图变体。这说明主要收益来自拓扑视图、特征视图与跨视图对比对齐的组合。
+
+\begin{table}[t]
+\centering
+\caption{原始 KNN 特征视图下的 ACM 组件消融。}
+\label{tab:component_ablation_zh}
+\begin{tabular}{c|c|c|c}
+\hline
+变体 & 干净 Micro-F1 & 攻击 Micro-F1 平均 & 攻击 Macro-F1 平均 \\
+\hline
+Full DVCL & $0.8770\pm0.0071$ & 0.8710 & 0.8680 \\
+DVCL w/o CL & $0.8743\pm0.0074$ & 0.8656 & 0.8626 \\
+Topology only & $0.8523\pm0.0177$ & 0.8471 & 0.8415 \\
+Feature only & $0.8539\pm0.0086$ & 0.8539 & 0.8512 \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{参数敏感性}
+
+表~\ref{tab:param_zh} 报告原始有向 KNN 设置下 $\lambda_{\mathrm{DVCL}}$ 的敏感性。增大对比学习权重可以提升攻击平均分数，但较大的权重也会在部分 HetePRBCD 设置下带来更高方差。因此，本文当前使用 $\lambda_{\mathrm{DVCL}}=0.5$ 作为主配置，并将更大的取值作为后续调优候选。
+
+\begin{table}[t]
+\centering
+\caption{ACM 上 $\lambda_{\mathrm{DVCL}}$ 的敏感性。}
+\label{tab:param_zh}
+\begin{tabular}{c|c|c|c}
+\hline
+$\lambda_{\mathrm{DVCL}}$ & 干净 Micro-F1 & 攻击 Micro-F1 平均 & 攻击 Macro-F1 平均 \\
+\hline
+0.5 & $0.8770\pm0.0071$ & 0.8710 & 0.8680 \\
+1.0 & $0.8810\pm0.0049$ & 0.8723 & 0.8690 \\
+2.0 & $0.8790\pm0.0085$ & 0.8734 & 0.8709 \\
+\hline
+\end{tabular}
+\end{table}
 
 \subsection{补充特征视图升级}
 
-补充实验讨论特征诱导视图的进一步增强方式，例如更强的特征相似性建模或更灵活的特征图构造策略。
-该部分主要用于说明 DVCL 框架可以容纳更强的特征视图模块。
+DVCL 主配置使用 $k=20$ 的原始有向 KNN。本文也评估了能否通过改变 KNN 构造方式进一步增强特征视图。这些实验属于补充升级，而不是主基线比较。
+
+表~\ref{tab:knn_supp_zh} 报告轻量级 KNN 研究。原始 $k=20$ 特征视图是默认设置。异构邻居增强 KNN 提升了攻击平均 Micro-F1，说明特征视图可以通过引入直接异构邻域信息进一步升级。
+
+\begin{table}[t]
+\centering
+\caption{ACM 上的补充 KNN 特征视图研究。数值为三种子的 Micro-F1 平均。}
+\label{tab:knn_supp_zh}
+\begin{tabular}{c|c|c|c}
+\hline
+特征视图 & 干净 & 攻击 Micro-F1 平均 & 攻击 Macro-F1 平均 \\
+\hline
+Raw KNN, $k=10$ & 0.8750 & 0.8719 & 0.8693 \\
+Raw KNN, $k=20$ & 0.8752 & 0.8706 & 0.8675 \\
+Raw KNN, $k=40$ & 0.8665 & 0.8677 & 0.8650 \\
+Mutual raw KNN, $k=20$ & 0.8804 & 0.8739 & 0.8715 \\
+Hetero-profile KNN, $k=20$ & 0.8807 & 0.8784 & 0.8766 \\
+\hline
+\end{tabular}
+\end{table}
+
+后续实验还将进一步探索归一化异构 profile、mutual KNN 和按关系划分的邻居特征均值。这些变体可以提升特征视图，但应被视为 DVCL 的后续扩展，而不是当前 HSeCo 主比较中使用的核心方法。

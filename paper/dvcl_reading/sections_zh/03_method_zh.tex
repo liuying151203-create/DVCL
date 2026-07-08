@@ -1,43 +1,251 @@
 \section{方法}
 \label{sec:method-zh}
 
-DVCL 的核心思想是同时利用两类互补信息。
-第一类是经过净化的异构语义拓扑，它保留元路径带来的高阶语义表达能力。
-第二类是由节点特征相似性构建的特征诱导视图，它在结构被攻击时提供相对独立的参考。
-两个视图分别编码后，通过融合模块得到最终节点表示，并通过跨视图对比学习约束两种表示的一致性。
-
 \subsection{总体框架}
 
-模型输入为受攻击异构图、节点特征、目标类型节点标签以及一组元路径。
-DVCL 首先为每条元路径构造语义图，并估计候选边的可靠性；随后进行元路径级过滤和全局语义过滤，得到净化拓扑视图。
-与此同时，模型基于目标节点特征相似性构造 KNN 图，形成特征诱导视图。
-两个视图经过编码器得到拓扑表示和特征表示，再通过融合模块用于节点分类。
+本文提出 Dual-View Contrastive Learning（DVCL），用于鲁棒异构图节点分类。给定异构图
+$\mathcal{G}=(\mathcal{V},\mathcal{E},\mathcal{A},\mathcal{R})$，其中 $\mathcal{A}$ 和 $\mathcal{R}$ 分别表示节点类型集合和关系类型集合，目标是预测目标类型节点 $\mathcal{V}_t=\{v_1,\ldots,v_n\}$ 的标签。令 $X\in\mathbb{R}^{n\times d}$ 表示目标节点的特征矩阵，$Y$ 表示标签集合。
 
-\subsection{净化拓扑视图}
+DVCL 为目标节点构造两个互补视图。第一个视图是净化拓扑视图，它由元路径诱导的同构图和语义注意力得到。第二个视图是特征诱导视图，它是在增强特征空间中构造的 KNN 图。两个视图分别由独立图编码器进行编码，随后用于融合分类，并进一步通过对称跨视图 InfoNCE 损失进行对齐。
 
-拓扑视图的目标是在保留异构语义结构的同时削弱攻击边影响。
-论文中的净化策略包含两个层次：先在每条元路径对应的语义图内估计边置信度并过滤低置信边，再根据语义注意力评估不同元路径的重要性，进行全局语义过滤。
-这样可以同时处理局部边噪声和不同语义视图之间的污染程度差异。
+\subsection{净化拓扑视图构造}
 
-\subsection{特征诱导视图}
+\paragraph{元路径诱导图构造。}
+令 $\mathcal{P}=\{P_1,\ldots,P_M\}$ 表示元路径集合，其中 $M$ 是元路径数量。对于每条元路径 $P_m$，通过沿元路径依次相乘行归一化后的关系邻接矩阵，构造目标节点同构邻接矩阵 $A^{(m)}\in\mathbb{R}^{n\times n}$：
+\begin{equation}
+A^{(m)}
+=
+\bar{A}_{r_1}\bar{A}_{r_2}\cdots \bar{A}_{r_L},
+\end{equation}
+其中 $P_m=(r_1,r_2,\ldots,r_L)$，$\bar{A}_{r_l}$ 是关系 $r_l$ 的行归一化邻接矩阵。
 
-特征诱导视图从目标节点特征出发，根据节点间相似性构建 KNN 图。
-该视图不直接依赖受攻击拓扑，因此能够在结构扰动较强时提供补充信号。
-如果两个节点在特征空间中高度相似，即使它们在被攻击图中没有可靠连接，也可以通过该视图建立表示学习联系。
+\paragraph{边置信度估计。}
+原始元路径连通性只反映结构可达性。为了进一步引入节点特征一致性，本文对元路径 $P_m$ 下每条候选边 $(i,j)$ 计算特征校准的边分数：
+\begin{equation}
+s_{ij}^{(m)}
+=
+A_{ij}^{(m)} \cdot x_i^{\top}x_j,
+\end{equation}
+其中 $x_i$ 和 $x_j$ 分别是目标节点 $v_i$ 和 $v_j$ 的特征。随后进行度归一化：
+\begin{equation}
+w_{ij}^{(m)}
+=
+(d_i^{(m)})^{-1}
+s_{ij}^{(m)}
+(d_j^{(m)})^{-1},
+\end{equation}
+其中 $d_i^{(m)}=\sum_j s_{ij}^{(m)}$。$w_{ij}^{(m)}$ 被用作第 $m$ 个元路径图中边 $(i,j)$ 的置信度分数。
 
-\subsection{双视图编码、融合与分类}
+\paragraph{元路径级过滤。}
+对于每个元路径图，使用元路径特定阈值 $\gamma_m$ 移除低置信边：
+\begin{equation}
+E^{(m)}_{\mathrm{pur}}
+=
+\{(i,j)\mid w_{ij}^{(m)} \geq \gamma_m\}.
+\end{equation}
+由此得到一组净化后的元路径图
+$\{\mathcal{G}^{(1)}_{\mathrm{pur}},\ldots,\mathcal{G}^{(M)}_{\mathrm{pur}}\}$。
 
-拓扑视图编码器负责从净化后的语义拓扑中学习结构语义表示，特征视图编码器负责从特征诱导图中学习特征相似性表示。
-随后，模型将两类表示融合为最终节点表示，并输入分类器完成目标类型节点分类。
-融合的目的不是简单替代拓扑信息，而是在拓扑语义和特征稳定性之间取得平衡。
+\paragraph{语义注意力。}
+本文使用 HAN 风格的语义注意力模块估计不同元路径的重要性。对于每个净化元路径图，GAT 编码器生成元路径特定的节点表示 $h_i^{(m)}$。元路径 $P_m$ 的语义分数计算为
+\begin{equation}
+e_m
+=
+\frac{1}{n}
+\sum_{i=1}^{n}
+\mathbf{q}^{\top}
+\tanh(W_s h_i^{(m)} + b_s),
+\end{equation}
+其中 $W_s$、$b_s$ 和 $\mathbf{q}$ 是可学习参数。归一化后的语义注意力权重为
+\begin{equation}
+\beta_m
+=
+\frac{\exp(e_m)}
+{\sum_{m'=1}^{M}\exp(e_{m'})}.
+\end{equation}
+
+\paragraph{融合拓扑图净化。}
+最终拓扑视图通过语义注意力聚合净化元路径边分数得到：
+\begin{equation}
+\bar{w}_{ij}
+=
+\sum_{m=1}^{M}
+\beta_m w_{ij}^{(m)}.
+\end{equation}
+在合并来自不同元路径的重复边之后，进一步应用全局语义过滤阈值 $\gamma_s$：
+\begin{equation}
+E_{\mathrm{topo}}
+=
+\{(i,j)\mid \bar{w}_{ij}\geq \gamma_s\}.
+\end{equation}
+得到的图记为
+$\mathcal{G}_{\mathrm{topo}}=(\mathcal{V}_t,E_{\mathrm{topo}})$，并作为净化拓扑视图。
+
+\subsection{特征诱导视图构造}
+
+拓扑视图来源于元路径诱导结构，因此仍可能受到图边对抗扰动的影响。为了提供一个较少依赖观测拓扑的互补视图，DVCL 仅基于目标节点原始属性构造特征诱导图。
+
+令 $X=[x_1,x_2,\ldots,x_n]^\top\in\mathbb{R}^{n\times d}$ 表示目标节点原始特征矩阵，其中 $x_i$ 是节点 $v_i$ 的特征向量。首先对每个特征向量进行 $\ell_2$ 归一化：
+\begin{equation}
+\tilde{x}_i
+=
+\frac{x_i}{\|x_i\|_2}.
+\end{equation}
+然后计算每对目标节点之间的余弦相似度：
+\begin{equation}
+\operatorname{sim}(i,j)
+=
+\tilde{x}_i^\top \tilde{x}_j.
+\end{equation}
+对于每个节点 $v_i$，选择相似度最高的 top-$k$ 个节点作为其特征邻居：
+\begin{equation}
+\mathcal{N}_k(i)
+=
+\operatorname{TopK}_{j\neq i}
+\operatorname{sim}(i,j).
+\end{equation}
+特征诱导边集合定义为
+\begin{equation}
+E_{\mathrm{feat}}
+=
+\{(i,j)\mid j\in\mathcal{N}_k(i)\}.
+\end{equation}
+由此得到有向 KNN 图
+\begin{equation}
+\mathcal{G}_{\mathrm{feat}}
+=
+(\mathcal{V}_t,E_{\mathrm{feat}}),
+\end{equation}
+并将其作为特征诱导视图。由于该视图由原始节点属性构造，而不是由受扰动异构拓扑构造，因此在结构攻击下能够为净化拓扑视图提供互补信号。
+
+\subsection{双视图编码}
+
+DVCL 为拓扑视图和特征诱导视图分别使用两个独立图编码器。两个编码器均实现为带自环的 GAT 图编码器。
+
+对于拓扑视图，节点表示为
+\begin{equation}
+Z_{\mathrm{topo}}
+=
+f_{\mathrm{topo}}(X,\mathcal{G}_{\mathrm{topo}}),
+\end{equation}
+其中 $f_{\mathrm{topo}}(\cdot)$ 表示拓扑视图编码器，$Z_{\mathrm{topo}}\in\mathbb{R}^{n\times d_z}$。
+
+对于特征视图，首先对输入特征矩阵进行 feature dropout，然后在特征诱导图上编码：
+\begin{equation}
+Z_{\mathrm{feat}}
+=
+f_{\mathrm{feat}}(\operatorname{Dropout}(X),\mathcal{G}_{\mathrm{feat}}),
+\end{equation}
+其中 $f_{\mathrm{feat}}(\cdot)$ 表示特征视图编码器，$Z_{\mathrm{feat}}\in\mathbb{R}^{n\times d_z}$。特征 masking/dropout 操作为特征视图提供轻量级正则化。
+
+\subsection{双视图融合与分类}
+
+对于每个目标节点 $v_i$，DVCL 得到两个视图特定嵌入 $z_i^{\mathrm{topo}}$ 和 $z_i^{\mathrm{feat}}$。在默认设置中，两个嵌入直接拼接：
+\begin{equation}
+z_i
+=
+z_i^{\mathrm{topo}}
+\Vert
+z_i^{\mathrm{feat}}.
+\end{equation}
+最终预测 logits 由线性分类器得到：
+\begin{equation}
+o_i
+=
+W_c z_i + b_c,
+\end{equation}
+其中 $W_c$ 和 $b_c$ 是可学习的分类器参数。
+
+给定有标签训练节点集合 $\mathcal{V}_{\mathrm{tr}}$，分类损失为
+\begin{equation}
+\mathcal{L}_{\mathrm{cls}}
+=
+-\frac{1}{|\mathcal{V}_{\mathrm{tr}}|}
+\sum_{i\in\mathcal{V}_{\mathrm{tr}}}
+\log
+\frac{\exp(o_{i,y_i})}
+{\sum_{c=1}^{C}\exp(o_{i,c})},
+\end{equation}
+其中 $C$ 是类别数量，$y_i$ 是节点 $v_i$ 的真实标签。
 
 \subsection{跨视图对比学习}
 
-DVCL 使用对称跨视图对比目标对齐两个视图。
-对于同一节点，其拓扑表示和特征表示构成正样本对；对于不同节点，表示之间构成负样本对。
-这种约束鼓励同一节点在两种视图下保持一致，同时避免所有节点表示塌缩到相同空间位置。
+为了鼓励拓扑视图和特征视图之间表示一致，DVCL 在训练节点上使用对称跨视图 InfoNCE 损失。首先对两个视图特定嵌入进行归一化：
+\begin{equation}
+\tilde{z}_i^{\mathrm{topo}}
+=
+\frac{z_i^{\mathrm{topo}}}{\|z_i^{\mathrm{topo}}\|_2},
+\quad
+\tilde{z}_i^{\mathrm{feat}}
+=
+\frac{z_i^{\mathrm{feat}}}{\|z_i^{\mathrm{feat}}\|_2}.
+\end{equation}
+对于节点 $v_i$，正样本对为 $(\tilde{z}_i^{\mathrm{topo}},\tilde{z}_i^{\mathrm{feat}})$，其他节点在相反视图中的嵌入作为负样本。拓扑到特征方向的对比损失为
+\begin{equation}
+\mathcal{L}_{t\rightarrow f}
+=
+-\frac{1}{|\mathcal{V}_{\mathrm{tr}}|}
+\sum_{i\in\mathcal{V}_{\mathrm{tr}}}
+\log
+\frac{
+\exp((\tilde{z}_i^{\mathrm{topo}})^{\top}
+\tilde{z}_i^{\mathrm{feat}}/\tau)
+}
+{
+\sum_{j\in\mathcal{V}_{\mathrm{tr}}}
+\exp((\tilde{z}_i^{\mathrm{topo}})^{\top}
+\tilde{z}_j^{\mathrm{feat}}/\tau)
+},
+\end{equation}
+其中 $\tau$ 是温度参数。类似地，特征到拓扑方向的损失为
+\begin{equation}
+\mathcal{L}_{f\rightarrow t}
+=
+-\frac{1}{|\mathcal{V}_{\mathrm{tr}}|}
+\sum_{i\in\mathcal{V}_{\mathrm{tr}}}
+\log
+\frac{
+\exp((\tilde{z}_i^{\mathrm{feat}})^{\top}
+\tilde{z}_i^{\mathrm{topo}}/\tau)
+}
+{
+\sum_{j\in\mathcal{V}_{\mathrm{tr}}}
+\exp((\tilde{z}_i^{\mathrm{feat}})^{\top}
+\tilde{z}_j^{\mathrm{topo}}/\tau)
+}.
+\end{equation}
+最终跨视图对比损失为
+\begin{equation}
+\mathcal{L}_{\mathrm{cl}}
+=
+\frac{1}{2}
+(
+\mathcal{L}_{t\rightarrow f}
++
+\mathcal{L}_{f\rightarrow t}
+).
+\end{equation}
 
 \subsection{训练目标}
 
-最终训练目标由三部分组成：监督节点分类损失、跨视图对比损失和辅助语义拓扑学习损失。
-分类损失保证任务性能，对比损失提升双视图一致性，辅助目标帮助拓扑净化过程学习更可靠的语义结构。
+除了最终分类损失和跨视图对比损失之外，DVCL 保留辅助 HAN 分支分类损失，用于直接监督语义注意力模块。令 $o_i^{\mathrm{HAN}}$ 表示 HAN 语义分支产生的 logits，则辅助 HAN 损失为
+\begin{equation}
+\mathcal{L}_{\mathrm{HAN}}
+=
+-\frac{1}{|\mathcal{V}_{\mathrm{tr}}|}
+\sum_{i\in\mathcal{V}_{\mathrm{tr}}}
+\log
+\frac{\exp(o^{\mathrm{HAN}}_{i,y_i})}
+{\sum_{c=1}^{C}\exp(o^{\mathrm{HAN}}_{i,c})}.
+\end{equation}
+整体训练目标为
+\begin{equation}
+\mathcal{L}
+=
+\lambda_{\mathrm{HAN}}\mathcal{L}_{\mathrm{HAN}}
++
+\mathcal{L}_{\mathrm{cls}}
++
+\lambda_{\mathrm{DVCL}}\mathcal{L}_{\mathrm{cl}},
+\end{equation}
+其中 $\lambda_{\mathrm{HAN}}$ 控制辅助 HAN 监督强度，$\lambda_{\mathrm{DVCL}}$ 控制跨视图对比学习强度。包括语义注意力模块、两个视图编码器和最终分类器在内的所有可训练参数会被联合优化。

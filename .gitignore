@@ -10,6 +10,10 @@
 *.run.xml
 *.synctex.gz
 *.toc
+*.xdv
+
+# Generated PDFs
+paper/**/*.pdf
 
 # Local editor and OS files
 .DS_Store
@@ -18,3 +22,4 @@ Thumbs.db
 # Generated submission/export archives
 paper/*.zip
 paper/_exports/
+paper/**/build/
