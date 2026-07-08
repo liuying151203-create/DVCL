@@ -1,0 +1,57 @@
+\documentclass[10pt]{ctexart}
+
+% ========== Packages ==========
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{geometry}
+\geometry{margin=1in}
+
+% ========== Title ==========
+\title{DVCL: Dual-View Contrastive Learning for Robust Heterogeneous Graph Neural Networks\\
+DVCL：面向鲁棒异构图神经网络的双视图对比学习}
+
+\author{Anonymous Authors}
+
+\date{}
+
+\newcommand{\inputzhsection}[1]{%
+  \begingroup
+  \let\originalsection\section
+  \renewcommand{\section}[1]{\originalsection*{中文导读：##1}}%
+  \input{#1}%
+  \endgroup
+}
+
+\begin{document}
+
+\maketitle
+
+\input{../dvcl/sections/00_abstract}
+\input{sections_zh/00_abstract_zh}
+
+\input{../dvcl/sections/01_introduction}
+\inputzhsection{sections_zh/01_introduction_zh}
+
+\input{../dvcl/sections/02_preliminaries}
+\inputzhsection{sections_zh/02_preliminaries_zh}
+
+\input{../dvcl/sections/03_method}
+\inputzhsection{sections_zh/03_method_zh}
+
+\input{../dvcl/sections/04_experiments}
+\inputzhsection{sections_zh/04_experiments_zh}
+
+\input{../dvcl/sections/05_related_work}
+\inputzhsection{sections_zh/05_related_work_zh}
+
+\input{../dvcl/sections/06_conclusion}
+\inputzhsection{sections_zh/06_conclusion_zh}
+
+\bibliographystyle{plain}
+\bibliography{../dvcl/references}
+
+\end{document}

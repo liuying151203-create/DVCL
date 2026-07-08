@@ -1,0 +1,260 @@
+﻿\section{Method}
+
+\subsection{Overview}
+
+We propose Dual-View Contrastive Learning (DVCL) for robust heterogeneous graph node classification. Given a heterogeneous graph
+$\mathcal{G}=(\mathcal{V},\mathcal{E},\mathcal{A},\mathcal{R})$, where $\mathcal{A}$ and $\mathcal{R}$ denote the node-type and relation-type sets, respectively, our goal is to predict the labels of target-type nodes $\mathcal{V}_t=\{v_1,\ldots,v_n\}$. Let $X\in\mathbb{R}^{n\times d}$ be the feature matrix of the target nodes and $Y$ be the label set.
+
+DVCL constructs two complementary views for the target nodes. The first one is a purified topology view, which is obtained from meta-path-induced homogeneous graphs and semantic attention. The second one is a feature-induced view, which is built by a KNN graph in an enhanced feature space. The two views are encoded by separate graph encoders, fused for node classification, and further aligned by a symmetric cross-view InfoNCE loss.
+
+\subsection{Purified Topology View Construction}
+
+\paragraph{Meta-path-induced graph construction.}
+Let $\mathcal{P}=\{P_1,\ldots,P_M\}$ denote the set of meta-paths, where $M$ is the number of meta-paths. For each meta-path $P_m$, we construct a target-node homogeneous adjacency matrix $A^{(m)}\in\mathbb{R}^{n\times n}$ by multiplying the row-normalized relation-specific adjacency matrices along the meta-path:
+\begin{equation}
+A^{(m)}
+=
+\bar{A}_{r_1}\bar{A}_{r_2}\cdots \bar{A}_{r_L},
+\end{equation}
+where $P_m=(r_1,r_2,\ldots,r_L)$ and $\bar{A}_{r_l}$ is the row-normalized adjacency matrix of relation $r_l$.
+
+\paragraph{Edge confidence estimation.}
+The raw meta-path connectivity only reflects structural reachability. To further incorporate node feature consistency, we compute a feature-calibrated edge score for each candidate edge $(i,j)$ under meta-path $P_m$:
+\begin{equation}
+s_{ij}^{(m)}
+=
+A_{ij}^{(m)} \cdot x_i^{\top}x_j,
+\end{equation}
+where $x_i$ and $x_j$ are the features of target nodes $v_i$ and $v_j$. We then apply degree normalization:
+\begin{equation}
+w_{ij}^{(m)}
+=
+(d_i^{(m)})^{-1}
+s_{ij}^{(m)}
+(d_j^{(m)})^{-1},
+\end{equation}
+where $d_i^{(m)}=\sum_j s_{ij}^{(m)}$. The value $w_{ij}^{(m)}$ is used as the confidence score of edge $(i,j)$ in the $m$-th meta-path graph.
+
+\paragraph{Meta-path-level filtering.}
+For each meta-path graph, we remove low-confidence edges by a meta-path-specific threshold $\gamma_m$:
+\begin{equation}
+E^{(m)}_{\mathrm{pur}}
+=
+\{(i,j)\mid w_{ij}^{(m)} \geq \gamma_m\}.
+\end{equation}
+This produces a set of purified meta-path graphs
+$\{\mathcal{G}^{(1)}_{\mathrm{pur}},\ldots,\mathcal{G}^{(M)}_{\mathrm{pur}}\}$.
+
+\paragraph{Semantic attention.}
+We use a HAN-style semantic attention module to estimate the importance of different meta-paths. For each purified meta-path graph, a GAT encoder produces a meta-path-specific node representation $h_i^{(m)}$. The semantic score of meta-path $P_m$ is computed by
+\begin{equation}
+e_m
+=
+\frac{1}{n}
+\sum_{i=1}^{n}
+\mathbf{q}^{\top}
+\tanh(W_s h_i^{(m)} + b_s),
+\end{equation}
+where $W_s$, $b_s$, and $\mathbf{q}$ are learnable parameters. The normalized semantic attention weight is
+\begin{equation}
+\beta_m
+=
+\frac{\exp(e_m)}
+{\sum_{m'=1}^{M}\exp(e_{m'})}.
+\end{equation}
+
+\paragraph{Fused topology graph purification.}
+The final topology view is constructed by aggregating the purified meta-path edge scores with semantic attention:
+\begin{equation}
+\bar{w}_{ij}
+=
+\sum_{m=1}^{M}
+\beta_m w_{ij}^{(m)}.
+\end{equation}
+After coalescing duplicated edges from different meta-paths, we apply a global semantic filtering threshold $\gamma_s$:
+\begin{equation}
+E_{\mathrm{topo}}
+=
+\{(i,j)\mid \bar{w}_{ij}\geq \gamma_s\}.
+\end{equation}
+The resulting graph is denoted as
+$\mathcal{G}_{\mathrm{topo}}=(\mathcal{V}_t,E_{\mathrm{topo}})$ and serves as the purified topology view.
+
+\subsection{Feature-Induced View Construction}
+
+The topology view is constructed from meta-path-induced structures and may still be affected by adversarial perturbations on graph edges. To provide a complementary view that is less dependent on the observed topology, DVCL constructs a feature-induced graph based only on the raw attributes of target nodes.
+
+Let $X=[x_1,x_2,\ldots,x_n]^\top\in\mathbb{R}^{n\times d}$ denote the raw feature matrix of the target nodes, where $x_i$ is the feature vector of node $v_i$. We first apply $\ell_2$ normalization to each feature vector:
+\begin{equation}
+\tilde{x}_i
+=
+\frac{x_i}{\|x_i\|_2}.
+\end{equation}
+Then we compute the cosine similarity between each pair of target nodes:
+\begin{equation}
+\operatorname{sim}(i,j)
+=
+\tilde{x}_i^\top \tilde{x}_j.
+\end{equation}
+For each node $v_i$, we select the top-$k$ most similar nodes as its feature neighbors:
+\begin{equation}
+\mathcal{N}_k(i)
+=
+\operatorname{TopK}_{j\neq i}
+\operatorname{sim}(i,j).
+\end{equation}
+The feature-induced edge set is defined as
+\begin{equation}
+E_{\mathrm{feat}}
+=
+\{(i,j)\mid j\in\mathcal{N}_k(i)\}.
+\end{equation}
+This produces a directed KNN graph
+\begin{equation}
+\mathcal{G}_{\mathrm{feat}}
+=
+(\mathcal{V}_t,E_{\mathrm{feat}}),
+\end{equation}
+which serves as the feature-induced view. Since this view is built from raw node attributes rather than the perturbed heterogeneous topology, it provides a complementary signal to the purified topology view under structural attacks.
+
+\subsection{Dual-View Encoding}
+
+DVCL uses two separate graph encoders for the topology view and the feature-induced view. Both encoders are implemented as GAT-based graph encoders with self-loops.
+
+For the topology view, the node representation is
+\begin{equation}
+Z_{\mathrm{topo}}
+=
+f_{\mathrm{topo}}(X,\mathcal{G}_{\mathrm{topo}}),
+\end{equation}
+where $f_{\mathrm{topo}}(\cdot)$ denotes the topology-view encoder and
+$Z_{\mathrm{topo}}\in\mathbb{R}^{n\times d_z}$.
+
+For the feature view, we first apply feature dropout to the input feature matrix and then encode it on the feature-induced graph:
+\begin{equation}
+Z_{\mathrm{feat}}
+=
+f_{\mathrm{feat}}(\operatorname{Dropout}(X),\mathcal{G}_{\mathrm{feat}}),
+\end{equation}
+where $f_{\mathrm{feat}}(\cdot)$ is the feature-view encoder and
+$Z_{\mathrm{feat}}\in\mathbb{R}^{n\times d_z}$. The feature masking/dropout operation serves as a lightweight regularizer for the feature view.
+
+\subsection{Dual-View Fusion and Classification}
+
+For each target node $v_i$, DVCL obtains two view-specific embeddings
+$z_i^{\mathrm{topo}}$ and $z_i^{\mathrm{feat}}$. In the default setting, the two embeddings are concatenated:
+\begin{equation}
+z_i
+=
+z_i^{\mathrm{topo}}
+\Vert
+z_i^{\mathrm{feat}}.
+\end{equation}
+The final prediction logits are computed by a linear classifier:
+\begin{equation}
+o_i
+=
+W_c z_i + b_c,
+\end{equation}
+where $W_c$ and $b_c$ are learnable classifier parameters.
+
+Given the labeled training node set $\mathcal{V}_{\mathrm{tr}}$, the classification loss is
+\begin{equation}
+\mathcal{L}_{\mathrm{cls}}
+=
+-\frac{1}{|\mathcal{V}_{\mathrm{tr}}|}
+\sum_{i\in\mathcal{V}_{\mathrm{tr}}}
+\log
+\frac{\exp(o_{i,y_i})}
+{\sum_{c=1}^{C}\exp(o_{i,c})},
+\end{equation}
+where $C$ is the number of classes and $y_i$ is the ground-truth label of node $v_i$.
+
+\subsection{Cross-View Contrastive Learning}
+
+To encourage consistent representations between the topology view and the feature view, DVCL applies a symmetric cross-view InfoNCE loss on training nodes. We first normalize the two view-specific embeddings:
+\begin{equation}
+\tilde{z}_i^{\mathrm{topo}}
+=
+\frac{z_i^{\mathrm{topo}}}{\|z_i^{\mathrm{topo}}\|_2},
+\quad
+\tilde{z}_i^{\mathrm{feat}}
+=
+\frac{z_i^{\mathrm{feat}}}{\|z_i^{\mathrm{feat}}\|_2}.
+\end{equation}
+For node $v_i$, the positive pair is
+$(\tilde{z}_i^{\mathrm{topo}},\tilde{z}_i^{\mathrm{feat}})$, while embeddings of other nodes in the opposite view are treated as negatives. The topology-to-feature contrastive loss is
+\begin{equation}
+\mathcal{L}_{t\rightarrow f}
+=
+-\frac{1}{|\mathcal{V}_{\mathrm{tr}}|}
+\sum_{i\in\mathcal{V}_{\mathrm{tr}}}
+\log
+\frac{
+\exp((\tilde{z}_i^{\mathrm{topo}})^{\top}
+\tilde{z}_i^{\mathrm{feat}}/\tau)
+}
+{
+\sum_{j\in\mathcal{V}_{\mathrm{tr}}}
+\exp((\tilde{z}_i^{\mathrm{topo}})^{\top}
+\tilde{z}_j^{\mathrm{feat}}/\tau)
+},
+\end{equation}
+where $\tau$ is the temperature parameter. Similarly, the feature-to-topology loss is
+\begin{equation}
+\mathcal{L}_{f\rightarrow t}
+=
+-\frac{1}{|\mathcal{V}_{\mathrm{tr}}|}
+\sum_{i\in\mathcal{V}_{\mathrm{tr}}}
+\log
+\frac{
+\exp((\tilde{z}_i^{\mathrm{feat}})^{\top}
+\tilde{z}_i^{\mathrm{topo}}/\tau)
+}
+{
+\sum_{j\in\mathcal{V}_{\mathrm{tr}}}
+\exp((\tilde{z}_i^{\mathrm{feat}})^{\top}
+\tilde{z}_j^{\mathrm{topo}}/\tau)
+}.
+\end{equation}
+The final cross-view contrastive loss is
+\begin{equation}
+\mathcal{L}_{\mathrm{cl}}
+=
+\frac{1}{2}
+(
+\mathcal{L}_{t\rightarrow f}
++
+\mathcal{L}_{f\rightarrow t}
+).
+\end{equation}
+
+\subsection{Training Objective}
+
+In addition to the final classification loss and cross-view contrastive loss, DVCL keeps the auxiliary HAN branch classification loss to directly supervise the semantic attention module. Let $o_i^{\mathrm{HAN}}$ be the logits produced by the HAN semantic branch. The auxiliary HAN loss is
+\begin{equation}
+\mathcal{L}_{\mathrm{HAN}}
+=
+-\frac{1}{|\mathcal{V}_{\mathrm{tr}}|}
+\sum_{i\in\mathcal{V}_{\mathrm{tr}}}
+\log
+\frac{\exp(o^{\mathrm{HAN}}_{i,y_i})}
+{\sum_{c=1}^{C}\exp(o^{\mathrm{HAN}}_{i,c})}.
+\end{equation}
+The overall training objective is
+\begin{equation}
+\mathcal{L}
+=
+\lambda_{\mathrm{HAN}}\mathcal{L}_{\mathrm{HAN}}
++
+\mathcal{L}_{\mathrm{cls}}
++
+\lambda_{\mathrm{DVCL}}\mathcal{L}_{\mathrm{cl}},
+\end{equation}
+where $\lambda_{\mathrm{HAN}}$ controls the strength of the auxiliary HAN supervision and $\lambda_{\mathrm{DVCL}}$ controls the strength of cross-view contrastive learning. All trainable parameters, including the semantic attention module, the two view encoders, and the final classifier, are optimized jointly.
+
+% ========== 4 Experiments ==========
+% ========== 4 Experiments ==========
+
+% ========== 4 Experiments ==========
+

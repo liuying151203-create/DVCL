@@ -1,0 +1,71 @@
+﻿\section{Preliminaries}
+\label{sec:preliminaries}
+
+\noindent\textbf{Definition 1. Heterogeneous Graph.}
+A heterogeneous graph is defined as
+\begin{equation}
+\mathcal{G}=(\mathcal{V},\mathcal{E},\mathbf{X},\phi,\psi),
+\end{equation}
+where $\mathcal{V}$ and $\mathcal{E}$ denote the node set and edge set, respectively.
+$\mathbf{X}\in\mathbb{R}^{N\times d}$ is the node feature matrix.
+The mapping function $\phi:\mathcal{V}\rightarrow\mathcal{A}$ assigns each node to a node type, and $\psi:\mathcal{E}\rightarrow\mathcal{R}$ assigns each edge to a relation type.
+A graph is heterogeneous when it contains multiple types of nodes or edges.
+
+\noindent\textbf{Definition 2. Meta-path.}
+A meta-path is a composite relation defined on the schema of a heterogeneous graph:
+\begin{equation}
+\mathcal{P}:
+\mathcal{T}_1 \xrightarrow{\mathcal{R}_1}
+\mathcal{T}_2 \xrightarrow{\mathcal{R}_2}
+\cdots
+\xrightarrow{\mathcal{R}_L}
+\mathcal{T}_{L+1},
+\end{equation}
+where $\mathcal{T}_l\in\mathcal{A}$ denotes a node type and $\mathcal{R}_l\in\mathcal{R}$ denotes a relation type.
+A meta-path describes a specific semantic relation between nodes.
+For example, in an academic network, author--paper--author connects authors who write the same paper, while author--paper--venue--paper--author connects authors through publication venues.
+
+\noindent\textbf{Definition 3. Meta-path-based Neighbors.}
+Given a meta-path $\mathcal{P}$, the meta-path-based neighbor set of node $v_i$ is defined as
+\begin{equation}
+\mathcal{N}_{\mathcal{P}}(v_i)
+= \left\{ v_j \in \mathcal{V} \mid v_i \xrightarrow{\mathcal{P}} v_j \right\}, 
+\end{equation}
+where $v_i \xrightarrow{\mathcal{P}} v_j$ means that node $v_i$ can reach node $v_j$ through at least one path instance following $\mathcal{P}$.
+Different meta-paths produce different semantic neighborhoods for the same node.
+
+\noindent\textbf{Definition 4. Meta-path-based Semantic Aggregation.}
+Meta-path-based heterogeneous graph learning usually first constructs multiple semantic views according to different meta-paths.
+For each meta-path, a node aggregates information from its corresponding meta-path-based neighbors.
+Then, representations from different meta-paths are combined by semantic-level aggregation.
+This process can be generally described as
+\begin{equation}
+\mathbf{h}_i
+=
+\operatorname{Fuse}
+\left(
+\mathbf{h}_i^{(1)},\mathbf{h}_i^{(2)},\ldots,\mathbf{h}_i^{(M)}
+\right),
+\end{equation}
+where $\mathbf{h}_i^{(m)}$ denotes the representation of node $v_i$ under the $m$-th meta-path, and $\operatorname{Fuse}(\cdot)$ denotes a semantic fusion function.
+In this paper, such semantic aggregation provides the basis for constructing the topology view.
+
+\noindent\textbf{Definition 5. Adversarial Structural Attack.}
+Given a clean heterogeneous graph $\mathcal{G}$, an adversarial structural attack generates a perturbed graph
+\begin{equation}
+\widetilde{\mathcal{G}}
+=
+(\mathcal{V},\widetilde{\mathcal{E}},\mathbf{X},\phi,\psi),
+\end{equation}
+by modifying the edge set under a perturbation budget:
+\begin{equation}
+|\widetilde{\mathcal{E}}\triangle\mathcal{E}| \leq \Delta,
+\end{equation}
+where $\triangle$ denotes the symmetric difference between two edge sets and $\Delta$ is the attack budget.
+A global attack aims to degrade the overall classification performance of the model, while a targeted attack aims to mislead the predictions of specific target nodes.
+In heterogeneous graphs, structural perturbations may further affect high-order semantic neighborhoods induced by meta-paths.
+
+
+
+% ========== 3 Method ==========
+

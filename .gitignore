@@ -17,3 +17,4 @@ Thumbs.db
 
 # Generated submission/export archives
 paper/*.zip
+paper/_exports/

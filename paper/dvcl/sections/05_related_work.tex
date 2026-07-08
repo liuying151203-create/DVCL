@@ -1,0 +1,28 @@
+﻿\section{Related Work}
+
+\subsection{Heterogeneous Graph Neural Networks}
+
+Heterogeneous graph neural networks extend graph representation learning to graphs with multiple node and relation types. HAN \cite{wang2019han} uses node-level attention and semantic-level attention to aggregate information from meta-path-based neighborhoods. HGT \cite{hu2020hgt} introduces type-specific projections and attention mechanisms for heterogeneous graph transformers. MAGNN \cite{fu2020magnn} models intra-meta-path and inter-meta-path aggregation to capture fine-grained semantic dependencies. HeCo \cite{wang2021heco} further uses contrastive learning between network schema and meta-path views to improve heterogeneous graph representation learning.
+
+These methods show the value of semantic aggregation, but they are usually designed for clean graphs. Under adversarial structural perturbations, their reliance on observed edges and meta-path-induced neighborhoods may cause corrupted semantics to be propagated. DVCL keeps the semantic modeling ability of heterogeneous graph learning while explicitly introducing topology purification and a feature-induced view for robustness.
+
+\subsection{Robust Graph Neural Networks}
+
+Robust graph neural networks aim to reduce the sensitivity of graph models to adversarial or noisy structures. GCN-Jaccard \cite{wu2019gcnjaccard} removes edges between nodes with low feature similarity. RGCN \cite{zhu2019rgcn} uses Gaussian distributions to model hidden representations and reduce adversarial effects. Pro-GNN \cite{jin2020prognn} jointly learns graph structure and GNN parameters with sparsity and low-rank constraints. GNNGuard \cite{zhang2020gnnguard} assigns edge weights according to feature similarity, and SimP-GCN \cite{jin2021simpgcn} incorporates similarity-preserving constraints into graph convolution.
+
+Most robust GNNs are developed for homogeneous graphs. Directly applying them to heterogeneous graphs may ignore typed relations and semantic paths. DVCL differs by operating on meta-path-induced semantic structures and by using feature-induced evidence as an auxiliary view rather than as a simple edge-pruning rule.
+
+\subsection{Robust Heterogeneous Graph Learning}
+
+Robust heterogeneous graph learning has recently attracted attention because structural attacks can be amplified through heterogeneous semantics. Methods such as RoHe \cite{rohe}, HeteGuard \cite{heteguard}, and HSeCo \cite{hseco} attempt to defend HGNNs by modeling relation-aware perturbations, filtering unreliable semantic connections, or improving semantic topology learning.
+
+These methods are closely related to DVCL, but they still mainly rely on the attacked heterogeneous topology when constructing candidate neighborhoods. DVCL addresses this limitation by adding a feature-induced graph that does not directly depend on perturbed edges. The cross-view objective then encourages topology-view representations and feature-view representations to agree, improving robustness when either view is noisy.
+
+\subsection{Graph Contrastive Learning}
+
+Graph contrastive learning learns representations by maximizing agreement between related graph views. DGI \cite{velickovic2019dgi} contrasts node representations with graph-level summaries. MVGRL \cite{hassani2020mvgrl} contrasts diffusion and adjacency views. GRACE \cite{zhu2020grace} and GCA \cite{zhu2021gca} generate graph augmentations and align node representations across augmented views. In heterogeneous graphs, HeCo \cite{wang2021heco} contrasts schema and meta-path views to learn semantic representations.
+
+DVCL is also based on cross-view agreement, but its views are designed for robustness rather than only self-supervised representation learning. The topology view captures purified heterogeneous semantics, while the feature-induced view provides an attack-resistant reference. The contrastive objective is therefore used to improve consistency between semantic topology and feature similarity under structural attacks.
+
+% ========== 6 Conclusion ==========
+
