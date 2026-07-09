@@ -51,6 +51,7 @@
     "*.log",
     "*.out",
     "*.synctex.gz",
-    "*.toc"
+    "*.toc",
+    "*.xdv"
   ]
 }
