@@ -1,199 +1,283 @@
-﻿\section{Experiments}
+\section{Experiments}
 
-\subsection{Datasets}
+\subsection{Experimental Setup}
 
-We evaluate DVCL on four heterogeneous graph benchmarks: ACM, DBLP, AMiner, and IMDB. Each dataset contains multiple node types and relation types, and the task is semi-supervised node classification on a target node type. Following the HSeCo setting, we use dataset-specific meta-paths to construct semantic neighborhoods for target nodes. Table~\ref{tab:dataset_settings} summarizes the target node type and meta-paths used in each dataset.
+\subsubsection{Datasets}
 
-\begin{table}[t]
+We evaluate DVCL on four heterogeneous graph benchmarks: ACM, DBLP, AMiner, and IMDB. Each dataset contains multiple node and relation types, and the task is semi-supervised classification of a target node type. Following the HSeCo protocol, dataset-specific meta-paths are used to construct semantic neighborhoods. Table~\ref{tab:dataset_settings} summarizes the target node type and meta-paths. The final main comparison will contain at least three datasets with complete five-seed results; the fourth dataset will be reported when the same protocol has been completed.
+
+\begin{table}[htbp]
 \centering
 \caption{Dataset settings.}
 \label{tab:dataset_settings}
-\begin{tabular}{c|c|c}
-\hline
+\begin{tabular}{lll}
+\toprule
 Dataset & Target node type & Meta-paths \\
-\hline
+\midrule
 ACM & Paper & P-A-P, P-F-P \\
 DBLP & Author & A-P-A, A-P-C-P-A, A-P-T-P-A \\
 AMiner & Paper & P-A-P, P-R-P \\
 IMDB & Movie & M-D-M, M-A-M \\
-\hline
+\bottomrule
 \end{tabular}
 \end{table}
 
-The current completed main experiments focus on ACM, where both global structural attacks and target attacks have been evaluated with five random seeds. DBLP results are available as single-seed supporting evidence. AMiner and IMDB are kept in the benchmark protocol and will be completed in the next experimental round.
+\subsubsection{Evaluation Protocol}
 
-\subsection{Baselines}
+We use classification accuracy as the only evaluation metric:
+\begin{equation}
+\operatorname{Accuracy}
+=\frac{1}{|\mathcal{V}_{\mathrm{eval}}|}
+\sum_{i\in\mathcal{V}_{\mathrm{eval}}}
+\mathbb{I}(\hat{y}_i=y_i).
+\end{equation}
+Unless otherwise stated, each table reports the mean and standard deviation over seeds 1, 2, 3, 4, and 5. All methods use the same train/validation/test split, attacked graph artifact, target-node IDs, and evaluation nodes for each seed. Hyperparameters are selected only on the validation split under an equal tuning budget. A dash (``--'') denotes a result that has not yet been produced under the unified protocol. When a paired HSeCo reference is available, the small colored line below an accuracy value reports its change relative to the HSeCo row in the same column; green and ``+'' indicate an increase, whereas red and ``-'' indicate a decrease. Preliminary tables use the explicitly labeled pre-audit HSeCo row, while final tables will use HSeCo$^{\dagger}$.
 
-The primary baseline is HSeCo, because DVCL is built on top of HSeCo's semantic topology learning pipeline and is designed to test whether adding a feature-induced view and cross-view contrastive alignment improves robustness. We also position HSeCo against other related heterogeneous graph and robust graph learning methods, including HAN~\cite{wang2019han}, HGT~\cite{hu2020hgt}, MAGNN~\cite{fu2020magnn}, HeCo~\cite{wang2021heco}, RoHe~\cite{rohe}, HeteGuard~\cite{heteguard}, GCN-Jaccard~\cite{wu2019gcnjaccard}, RGCN~\cite{zhu2019rgcn}, Pro-GNN~\cite{jin2020prognn}, GNNGuard~\cite{zhang2020gnnguard}, and SimP-GCN~\cite{jin2021simpgcn}.
+Numbers copied from the original papers are not mixed with rerun results in the main tables. HSeCo$^{\dagger}$ denotes our audited reproduction. The difference between published HSeCo results and our reproduction will be documented separately in the appendix, together with the data split, configuration, and checkpoint behavior.
 
-In the current draft, the reported numeric comparisons use HSeCo as the direct baseline. DVCL variants are used only for ablation and supplementary analysis, not as external baselines.
+\subsubsection{Baselines}
 
-\subsection{Attack Settings}
+Table~\ref{tab:baselines} defines the baseline set. It covers standard heterogeneous architectures, heterogeneous contrastive learning, and defenses designed for structural perturbations. Homogeneous defenses such as GCN-Jaccard and GNNGuard are excluded from the primary comparison unless the same pre-specified graph conversion is applied to every such method.
 
-For global attacks, we evaluate PRBCD and HetePRBCD with perturbation rates of $5\%$, $10\%$, $15\%$, $20\%$, and $25\%$. PRBCD performs global structure perturbation, while HetePRBCD accounts for heterogeneous relation types during perturbation. Clean performance without attack is also reported.
-
-For target attacks, we use an FGSM-style heterogeneous graph target attack on ACM. For each seed, 500 target paper nodes are sampled from the test split. The attack budget is set to $\Delta=3$ in the main multi-seed target-attack table, and the attack perturbs task-relevant P-A edges. The target-attack metric is computed on the selected target nodes, not on the full test split.
-
-\subsection{Implementation Details}
-
-All models are trained with the same data splits and attack artifacts for fair comparison. Unless otherwise specified, each ACM result is averaged over five random seeds, namely 1, 2, 3, 4, and 5. The maximum number of training epochs is 200, and early stopping is used. We use Adam as the optimizer.
-
-The main DVCL setting uses the original feature KNN view: raw target-node features, directed KNN, and $k=20$. The topology view follows the HSeCo semantic topology construction. The two view-specific representations are concatenated for classification, and the cross-view contrastive loss is applied between topology-view and feature-view embeddings. We use $\lambda_{\mathrm{HAN}}=1.0$. The main tuned DVCL configuration uses $\lambda_{\mathrm{DVCL}}=0.5$; the earlier $\lambda_{\mathrm{DVCL}}=0.1$ setting is retained in Table~\ref{tab:lambda_compare} for comparison.
-
-\subsection{Overall Performance}
-
-Table~\ref{tab:overall_global} reports the main ACM global-attack results. HSeCo is the direct baseline. DVCL uses the raw directed KNN feature view with $k=20$ and $\lambda_{\mathrm{DVCL}}=0.5$.
-
-\begin{table}[t]
+\begin{table}[htbp]
 \centering
-\caption{ACM global attack performance. Results are Micro-F1 mean $\pm$ standard deviation over five seeds.}
-\label{tab:overall_global}
-\begin{tabular}{c|c|c|c|c}
-\hline
-Attack & Rate & HSeCo & DVCL & $\Delta$ pp \\
-\hline
-Clean & 0\% & $0.8679\pm0.0129$ & $0.8770\pm0.0071$ & +0.91 \\
-PRBCD & 5\% & $0.8491\pm0.0086$ & $0.8732\pm0.0092$ & +2.41 \\
-PRBCD & 10\% & $0.8519\pm0.0080$ & $0.8718\pm0.0077$ & +1.99 \\
-PRBCD & 15\% & $0.8484\pm0.0091$ & $0.8674\pm0.0060$ & +1.90 \\
-PRBCD & 20\% & $0.8530\pm0.0092$ & $0.8660\pm0.0146$ & +1.30 \\
-PRBCD & 25\% & $0.8504\pm0.0092$ & $0.8659\pm0.0082$ & +1.55 \\
-HetePRBCD & 5\% & $0.8530\pm0.0121$ & $0.8762\pm0.0027$ & +2.33 \\
-HetePRBCD & 10\% & $0.8589\pm0.0126$ & $0.8737\pm0.0087$ & +1.48 \\
-HetePRBCD & 15\% & $0.8546\pm0.0070$ & $0.8726\pm0.0046$ & +1.79 \\
-HetePRBCD & 20\% & $0.8548\pm0.0124$ & $0.8700\pm0.0108$ & +1.53 \\
-HetePRBCD & 25\% & $0.8511\pm0.0092$ & $0.8703\pm0.0063$ & +1.92 \\
-\hline
+\small
+\caption{Methods included in the unified comparison.}
+\label{tab:baselines}
+\begin{tabular}{lp{0.23\linewidth}p{0.56\linewidth}}
+\toprule
+Method & Category & Role in the comparison \\
+\midrule
+HAN~\cite{wang2019han} & Heterogeneous backbone & Meta-path attention baseline without an explicit robustness mechanism. \\
+HGT~\cite{hu2020hgt} & Heterogeneous backbone & Type-aware Transformer baseline using typed projections and attention. \\
+MAGNN~\cite{fu2020magnn} & Heterogeneous backbone & Meta-path instance aggregation baseline with fine-grained semantic modeling. \\
+HeCo~\cite{wang2021heco} & Contrastive HGNN & Heterogeneous contrastive-learning baseline without an explicit attack defense. \\
+HSeCo$^{\dagger}$~\cite{hseco} & Robust HGNN & Direct semantic-topology baseline, rerun by us under the unified protocol. \\
+RoHe~\cite{rohe} & Robust HGNN & Heterogeneous defense baseline designed for adversarial structural perturbations. \\
+HeteGuard~\cite{heteguard} & Robust HGNN & Heterogeneous defense baseline that suppresses unreliable structural information. \\
+DVCL & Proposed method & Purified semantic topology, feature-induced graph, and cross-view contrastive alignment. \\
+\bottomrule
 \end{tabular}
 \end{table}
 
-DVCL outperforms HSeCo on all clean and attacked ACM settings. The average Micro-F1 over the ten attack conditions is 0.8525 for HSeCo and 0.8707 for DVCL, corresponding to an average gain of 1.82 percentage points. The improvement is consistent across both PRBCD and HetePRBCD, showing that the feature-induced view and cross-view alignment improve robustness beyond HSeCo's topology-only semantic defense.
+\subsubsection{Attack Settings}
 
-Table~\ref{tab:overall_macro} reports the corresponding Macro-F1 comparison. The Macro-F1 trend is consistent with Micro-F1, indicating that the improvement is not limited to dominant classes.
+For global attacks, we evaluate PRBCD and HetePRBCD with perturbation rates of $5\%$, $10\%$, $15\%$, $20\%$, and $25\%$. PRBCD performs global structural perturbation, whereas HetePRBCD preserves heterogeneous relation constraints during attack generation. Clean accuracy is reported alongside attacked accuracy.
 
-\begin{table}[t]
+For target attacks, we use an FGSM-style heterogeneous structural attack. On ACM, 500 target paper nodes are selected from the test split for each seed, and the same target IDs are reused by all methods. The final target-attack table reports budgets $\Delta\in\{1,2,3\}$ and evaluates accuracy only on the selected target nodes.
+
+The current attack suite modifies graph topology while leaving node attributes unchanged. Because DVCL constructs one view from node features, we additionally reserve experiments for feature perturbation and a joint adaptive attack that optimizes against both DVCL views. Until those experiments are complete, the empirical claim is restricted to robustness against structural perturbations.
+
+\subsubsection{Implementation and Model Selection}
+
+The maximum number of training epochs is 200, early stopping is based on validation performance, and Adam is used for optimization. Each checkpoint contains every trainable component required for inference. For HSeCo$^{\dagger}$, this includes both the HAN semantic module and the node classifier; after checkpoint restoration, the semantic graph is regenerated from the restored module.
+
+DVCL uses raw target-node features, directed KNN, and $k=20$ for the feature-induced view. The topology view follows the HSeCo semantic topology construction, and the two view-specific representations are concatenated for classification. We set $\lambda_{\mathrm{HAN}}=1.0$. Based on the preliminary sweep in Table~\ref{tab:param}, we fix $\lambda_{\mathrm{DVCL}}=1.0$ before the unified rerun. This setting balances clean and attacked accuracy, and it will not be retuned on individual attack test sets or datasets.
+
+\FloatBarrier
+\subsection{Main Results}
+
+\subsubsection{Cross-Dataset Summary}
+
+Table~\ref{tab:cross_dataset} is the final summary table to be completed after the unified rerun. ``Attack Avg.'' is the arithmetic mean over the ten PRBCD and HetePRBCD conditions. The currently populated ACM entries are preliminary records; they are retained to guide the paper draft but are not treated as the final external-baseline comparison.
+
+\begin{table}[htbp]
 \centering
-\caption{ACM global attack Macro-F1. Results are mean $\pm$ standard deviation over five seeds.}
-\label{tab:overall_macro}
-\begin{tabular}{c|c|c|c|c}
-\hline
-Attack & Rate & HSeCo & DVCL & $\Delta$ pp \\
-\hline
-Clean & 0\% & $0.8654\pm0.0129$ & $0.8739\pm0.0074$ & +0.85 \\
-PRBCD & 5\% & $0.8450\pm0.0090$ & $0.8709\pm0.0085$ & +2.59 \\
-PRBCD & 10\% & $0.8475\pm0.0085$ & $0.8680\pm0.0076$ & +2.05 \\
-PRBCD & 15\% & $0.8446\pm0.0099$ & $0.8639\pm0.0059$ & +1.93 \\
-PRBCD & 20\% & $0.8497\pm0.0100$ & $0.8641\pm0.0148$ & +1.44 \\
-PRBCD & 25\% & $0.8473\pm0.0093$ & $0.8620\pm0.0108$ & +1.47 \\
-HetePRBCD & 5\% & $0.8490\pm0.0125$ & $0.8738\pm0.0041$ & +2.48 \\
-HetePRBCD & 10\% & $0.8557\pm0.0127$ & $0.8706\pm0.0088$ & +1.49 \\
-HetePRBCD & 15\% & $0.8516\pm0.0059$ & $0.8704\pm0.0042$ & +1.88 \\
-HetePRBCD & 20\% & $0.8511\pm0.0124$ & $0.8677\pm0.0109$ & +1.66 \\
-HetePRBCD & 25\% & $0.8467\pm0.0090$ & $0.8668\pm0.0070$ & +2.01 \\
-\hline
-\end{tabular}
+\small
+\setlength{\tabcolsep}{3.5pt}
+\caption{Cross-dataset accuracy under the unified protocol. Final results will be reported as mean $\pm$ standard deviation over five seeds.}
+\label{tab:cross_dataset}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccccccc}
+\toprule
+& \multicolumn{2}{c}{ACM} & \multicolumn{2}{c}{DBLP} & \multicolumn{2}{c}{AMiner} & \multicolumn{2}{c}{IMDB} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}
+Method & Clean & Attack Avg. & Clean & Attack Avg. & Clean & Attack Avg. & Clean & Attack Avg. \\
+\midrule
+HAN & -- & -- & -- & -- & -- & -- & -- & -- \\
+HGT & -- & -- & -- & -- & -- & -- & -- & -- \\
+MAGNN & -- & -- & -- & -- & -- & -- & -- & -- \\
+HeCo & -- & -- & -- & -- & -- & -- & -- & -- \\
+HSeCo$^{\dagger}$ & -- & -- & -- & -- & -- & -- & -- & -- \\
+RoHe & -- & -- & -- & -- & -- & -- & -- & -- \\
+HeteGuard & -- & -- & -- & -- & -- & -- & -- & -- \\
+DVCL ($\lambda=1.0$, prelim.) & $0.8810\pm0.0049$ & 0.8723 & -- & -- & -- & -- & -- & -- \\
+DVCL ($\lambda=1.0$, final) & -- & -- & -- & -- & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}}
 \end{table}
 
-\subsection{Target Attack Results}
+\subsubsection{Global Structural Attacks on ACM}
 
-Table~\ref{tab:target_attack} reports ACM target-attack results under budget $\Delta=3$. HSeCo drops by 10.16 percentage points in target Micro-F1, while DVCL drops by only 1.16 percentage points. Under the same target attack setting, DVCL improves attacked target Micro-F1 by 10.00 percentage points over HSeCo.
+Tables~\ref{tab:acm_prbcd} and~\ref{tab:acm_heteprbcd} use models as rows so that every baseline can be added without changing the reporting format. The pre-audit HSeCo row and the DVCL ($\lambda=0.5$) row contain available historical records; their colored changes are paired within each column. They will be replaced by HSeCo$^{\dagger}$ and the fixed $\lambda=1.0$ DVCL configuration after all methods have been run on the same frozen artifacts.
 
-\begin{table}[t]
+\begin{table}[htbp]
 \centering
-\caption{ACM FGSM-style target attack under budget $\Delta=3$. Results are averaged over five seeds.}
+\small
+\caption{Accuracy on ACM under PRBCD. Values currently present are preliminary five-seed records.}
+\label{tab:acm_prbcd}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccccc}
+\toprule
+Method & Clean & 5\% & 10\% & 15\% & 20\% & 25\% \\
+\midrule
+HAN & -- & -- & -- & -- & -- & -- \\
+HGT & -- & -- & -- & -- & -- & -- \\
+MAGNN & -- & -- & -- & -- & -- & -- \\
+HeCo & -- & -- & -- & -- & -- & -- \\
+HSeCo (pre-audit) & $0.8679\pm0.0129$ & $0.8491\pm0.0086$ & $0.8519\pm0.0080$ & $0.8484\pm0.0091$ & $0.8530\pm0.0092$ & $0.8504\pm0.0092$ \\
+HSeCo$^{\dagger}$ (final) & -- & -- & -- & -- & -- & -- \\
+RoHe & -- & -- & -- & -- & -- & -- \\
+HeteGuard & -- & -- & -- & -- & -- & -- \\
+DVCL ($\lambda=0.5$, prelim.) & \accgain{$0.8770\pm0.0071$}{+0.91 pp} & \accgain{$0.8732\pm0.0092$}{+2.41 pp} & \accgain{$0.8718\pm0.0077$}{+1.99 pp} & \accgain{$0.8674\pm0.0060$}{+1.90 pp} & \accgain{$0.8660\pm0.0146$}{+1.30 pp} & \accgain{$0.8659\pm0.0082$}{+1.55 pp} \\
+DVCL ($\lambda=1.0$, final) & -- & -- & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Accuracy on ACM under HetePRBCD. Values currently present are preliminary five-seed records.}
+\label{tab:acm_heteprbcd}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccccc}
+\toprule
+Method & Clean & 5\% & 10\% & 15\% & 20\% & 25\% \\
+\midrule
+HAN & -- & -- & -- & -- & -- & -- \\
+HGT & -- & -- & -- & -- & -- & -- \\
+MAGNN & -- & -- & -- & -- & -- & -- \\
+HeCo & -- & -- & -- & -- & -- & -- \\
+HSeCo (pre-audit) & $0.8679\pm0.0129$ & $0.8530\pm0.0121$ & $0.8589\pm0.0126$ & $0.8546\pm0.0070$ & $0.8548\pm0.0124$ & $0.8511\pm0.0092$ \\
+HSeCo$^{\dagger}$ (final) & -- & -- & -- & -- & -- & -- \\
+RoHe & -- & -- & -- & -- & -- & -- \\
+HeteGuard & -- & -- & -- & -- & -- & -- \\
+DVCL ($\lambda=0.5$, prelim.) & \accgain{$0.8770\pm0.0071$}{+0.91 pp} & \accgain{$0.8762\pm0.0027$}{+2.33 pp} & \accgain{$0.8737\pm0.0087$}{+1.48 pp} & \accgain{$0.8726\pm0.0046$}{+1.79 pp} & \accgain{$0.8700\pm0.0108$}{+1.53 pp} & \accgain{$0.8703\pm0.0063$}{+1.92 pp} \\
+DVCL ($\lambda=1.0$, final) & -- & -- & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+The available ACM records indicate that the preliminary DVCL configuration is more stable than the pre-audit HSeCo reproduction across the tested structural perturbation rates. This observation remains provisional: the final claim will be based only on post-audit results produced by the frozen protocol and the fixed $\lambda_{\mathrm{DVCL}}=1.0$ configuration.
+
+\subsubsection{Target Structural Attacks}
+
+Table~\ref{tab:target_attack} reports target-node accuracy at three attack budgets. Existing records are available only at $\Delta=3$ for HSeCo and the preliminary DVCL configuration. Budgets 1 and 2, external baselines, and the final DVCL configuration remain to be completed on the same target-node IDs.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Target-node accuracy on ACM under the FGSM-style structural attack.}
 \label{tab:target_attack}
-\begin{tabular}{c|c|c|c|c}
-\hline
-Model & Clean Target Micro-F1 & Attacked Target Micro-F1 & Drop & Attacked Target Macro-F1 \\
-\hline
-HSeCo & 0.8624 & 0.7608 & -10.16 pp & 0.7631 \\
-DVCL & 0.8724 & 0.8608 & -1.16 pp & 0.8585 \\
-\hline
+\begin{tabular}{lcccc}
+\toprule
+Method & Clean & $\Delta=1$ & $\Delta=2$ & $\Delta=3$ \\
+\midrule
+HAN & -- & -- & -- & -- \\
+HGT & -- & -- & -- & -- \\
+MAGNN & -- & -- & -- & -- \\
+HeCo & -- & -- & -- & -- \\
+HSeCo (pre-audit) & 0.8624 & -- & -- & 0.7608 \\
+HSeCo$^{\dagger}$ (final) & -- & -- & -- & -- \\
+RoHe & -- & -- & -- & -- \\
+HeteGuard & -- & -- & -- & -- \\
+DVCL ($\lambda=0.5$, prelim.) & \accgain{0.8724}{+1.00 pp} & -- & -- & \accgain{0.8608}{+10.00 pp} \\
+DVCL ($\lambda=1.0$, final) & -- & -- & -- & -- \\
+\bottomrule
 \end{tabular}
 \end{table}
 
-This result shows the largest observed robustness gap between HSeCo and DVCL. Since target attacks directly perturb P-A edges around selected target nodes, the topology view can be strongly affected. DVCL is more stable because the raw feature KNN view does not directly depend on the attacked edges and can compensate for corrupted semantic topology.
+\FloatBarrier
+\subsection{Ablation and Sensitivity Analysis}
 
-\subsection{Ablation Study}
+\subsubsection{Contrastive-Loss Weight}
 
-We first compare the original DVCL setting with the tuned contrastive setting. Table~\ref{tab:lambda_compare} shows that increasing $\lambda_{\mathrm{DVCL}}$ from 0.1 to 0.5 improves all attacked global settings while keeping clean performance nearly unchanged.
+Table~\ref{tab:param} summarizes the available sweep of $\lambda_{\mathrm{DVCL}}$. The attack average covers all ten global attack conditions. We select $\lambda_{\mathrm{DVCL}}=1.0$ because it gives the best clean accuracy and nearly the strongest attacked accuracy, providing a balanced fixed configuration for the unified rerun. The value 2.0 is not selected solely for its slightly higher attack average.
 
-\begin{table}[t]
+\begin{table}[htbp]
 \centering
-\caption{Comparison between HSeCo, original DVCL, and tuned DVCL on ACM. Values are attack-average Micro-F1/Macro-F1 over PRBCD and HetePRBCD.}
-\label{tab:lambda_compare}
-\begin{tabular}{c|c|c}
-\hline
-Model & Attack Micro-F1 Avg & Attack Macro-F1 Avg \\
-\hline
-HSeCo & 0.8525 & 0.8488 \\
-DVCL, $\lambda_{\mathrm{DVCL}}=0.1$ & 0.8665 & 0.8632 \\
-DVCL, $\lambda_{\mathrm{DVCL}}=0.5$ & 0.8707 & 0.8680 \\
-\hline
-\end{tabular}
-\end{table}
-
-We then perform component ablation under the raw directed KNN setting with $k=20$. Table~\ref{tab:component_ablation} shows that the full DVCL model outperforms the variant without contrastive loss and both single-view variants. This confirms that the main gain comes from the combination of the topology view, the feature view, and cross-view contrastive alignment.
-
-\begin{table}[t]
-\centering
-\caption{ACM component ablation under raw KNN feature view.}
-\label{tab:component_ablation}
-\begin{tabular}{c|c|c|c}
-\hline
-Variant & Clean Micro-F1 & Attack Micro-F1 Avg & Attack Macro-F1 Avg \\
-\hline
-Full DVCL & $0.8770\pm0.0071$ & 0.8710 & 0.8680 \\
-DVCL w/o CL & $0.8743\pm0.0074$ & 0.8656 & 0.8626 \\
-Topology only & $0.8523\pm0.0177$ & 0.8471 & 0.8415 \\
-Feature only & $0.8539\pm0.0086$ & 0.8539 & 0.8512 \\
-\hline
-\end{tabular}
-\end{table}
-
-\subsection{Parameter Sensitivity}
-
-Table~\ref{tab:param} reports sensitivity to $\lambda_{\mathrm{DVCL}}$ under the raw directed KNN setting. Increasing the contrastive weight improves the attack-average score, but larger weights also bring higher variance on some HetePRBCD settings. We therefore use $\lambda_{\mathrm{DVCL}}=0.5$ as the current main configuration and treat larger values as candidates for further tuning.
-
-\begin{table}[t]
-\centering
-\caption{Sensitivity to $\lambda_{\mathrm{DVCL}}$ on ACM.}
+\caption{Accuracy sensitivity to $\lambda_{\mathrm{DVCL}}$ on ACM.}
 \label{tab:param}
-\begin{tabular}{c|c|c|c}
-\hline
-$\lambda_{\mathrm{DVCL}}$ & Clean Micro-F1 & Attack Micro-F1 Avg & Attack Macro-F1 Avg \\
-\hline
-0.5 & $0.8770\pm0.0071$ & 0.8710 & 0.8680 \\
-1.0 & $0.8810\pm0.0049$ & 0.8723 & 0.8690 \\
-2.0 & $0.8790\pm0.0085$ & 0.8734 & 0.8709 \\
-\hline
+\begin{tabular}{ccc}
+\toprule
+$\lambda_{\mathrm{DVCL}}$ & Clean Accuracy & Attack Average Accuracy \\
+\midrule
+0.1 & -- & 0.8665 \\
+0.5 & $0.8770\pm0.0071$ & 0.8710 \\
+1.0 & $0.8810\pm0.0049$ & 0.8723 \\
+2.0 & $0.8790\pm0.0085$ & 0.8734 \\
+\bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Supplementary Feature-View Upgrade}
+\subsubsection{Component Ablation}
 
-The main DVCL configuration uses raw directed KNN with $k=20$. We also evaluate whether the feature view can be further improved by changing the KNN construction. These experiments are supplementary upgrades, not the main baseline comparison.
+Table~\ref{tab:component_ablation} separates the effects of the two views and cross-view contrastive learning. These preliminary records use the raw directed KNN view with $k=20$ and the earlier $\lambda_{\mathrm{DVCL}}=0.5$ setting; the final ablation will use the same frozen split and artifacts as the main comparison.
 
-Table~\ref{tab:knn_supp} reports a lightweight KNN study. The raw $k=20$ feature view is the default setting. Heterogeneous-neighbor-enhanced KNN improves attack-average Micro-F1, suggesting that the feature view can be upgraded by incorporating direct heterogeneous neighborhood information.
-
-\begin{table}[t]
+\begin{table}[htbp]
 \centering
-\caption{Supplementary KNN feature-view study on ACM. Values are three-seed Micro-F1 averages.}
-\label{tab:knn_supp}
-\begin{tabular}{c|c|c|c}
-\hline
-Feature view & Clean & Attack Micro-F1 Avg & Attack Macro-F1 Avg \\
-\hline
-Raw KNN, $k=10$ & 0.8750 & 0.8719 & 0.8693 \\
-Raw KNN, $k=20$ & 0.8752 & 0.8706 & 0.8675 \\
-Raw KNN, $k=40$ & 0.8665 & 0.8677 & 0.8650 \\
-Mutual raw KNN, $k=20$ & 0.8804 & 0.8739 & 0.8715 \\
-Hetero-profile KNN, $k=20$ & 0.8807 & 0.8784 & 0.8766 \\
-\hline
+\caption{Component ablation accuracy on ACM.}
+\label{tab:component_ablation}
+\begin{tabular}{lcc}
+\toprule
+Variant & Clean Accuracy & Attack Average Accuracy \\
+\midrule
+Full DVCL & $0.8770\pm0.0071$ & 0.8710 \\
+DVCL w/o contrastive loss & $0.8743\pm0.0074$ & 0.8656 \\
+Topology view only & $0.8523\pm0.0177$ & 0.8471 \\
+Feature view only & $0.8539\pm0.0086$ & 0.8539 \\
+\bottomrule
 \end{tabular}
 \end{table}
 
-Later experiments further explore normalized heterogeneous profiles, mutual KNN, and relation-wise neighbor feature means. These variants can improve the feature view, but they should be treated as follow-up extensions of DVCL rather than the core method used in the main HSeCo comparison.
+\subsubsection{Feature-View Construction}
 
-% ========== 5 Related Work ==========
+Table~\ref{tab:knn_supp} reports a preliminary three-seed comparison of feature-view constructions. This analysis is supplementary and does not change the fixed raw directed KNN configuration used in the main comparison.
 
+\begin{table}[htbp]
+\centering
+\caption{Feature-view construction accuracy on ACM over three seeds.}
+\label{tab:knn_supp}
+\begin{tabular}{lcc}
+\toprule
+Feature view & Clean Accuracy & Attack Average Accuracy \\
+\midrule
+Raw KNN, $k=10$ & 0.8750 & 0.8719 \\
+Raw KNN, $k=20$ & 0.8752 & 0.8706 \\
+Raw KNN, $k=40$ & 0.8665 & 0.8677 \\
+Mutual raw KNN, $k=20$ & 0.8804 & 0.8739 \\
+Heterogeneous-profile KNN, $k=20$ & 0.8807 & 0.8784 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\FloatBarrier
+\subsection{Additional Robustness Analysis}
+
+Table~\ref{tab:adaptive_attack} reserves the tests needed to determine whether the feature-induced view remains reliable when the attacker is aware of the complete DVCL architecture. These results are required before making claims beyond structural robustness.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Accuracy under attacks beyond topology-only perturbation.}
+\label{tab:adaptive_attack}
+\begin{tabular}{lcccc}
+\toprule
+Attack setting & HSeCo$^{\dagger}$ & RoHe & HeteGuard & DVCL \\
+\midrule
+Feature perturbation & -- & -- & -- & -- \\
+Joint topology--feature attack & -- & -- & -- & -- \\
+Adaptive dual-view attack & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\FloatBarrier
+\subsection{Reproducibility and Claim Boundary}
+
+Before the final comparison, we audit HSeCo$^{\dagger}$ by correcting early stopping, jointly saving and restoring the semantic module and classifier, and regenerating the semantic graph from the restored checkpoint. For every dataset and seed, we store a manifest containing the split indices, attack artifact path, target-node IDs, random seed, model configuration, and selected checkpoint. All baselines are then rerun from these frozen manifests.
+
+At the current stage, the evidence supports only a restricted conclusion: under the unified ACM protocol, preliminary DVCL results are stronger than the current HSeCo reproduction under PRBCD, HetePRBCD, and the FGSM-style structural target attack. A broader claim against existing robust heterogeneous graph methods requires completed results for multiple datasets and the external baselines in Table~\ref{tab:baselines}.
+
+\FloatBarrier

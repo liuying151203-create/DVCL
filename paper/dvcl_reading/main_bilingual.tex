@@ -6,6 +6,9 @@
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{array}
+\usepackage{flafter}
+\usepackage{placeins}
+\usepackage{xcolor}
 \usepackage{hyperref}
 \usepackage{geometry}
 \usepackage{indentfirst}
@@ -19,6 +22,9 @@ DVCL：面向鲁棒异构图神经网络的双视图对比学习}
 \author{Anonymous Authors}
 
 \date{}
+
+\newcommand{\accgain}[2]{\shortstack{#1\\[-1pt]{\scriptsize\textcolor{green!50!black}{(#2)}}}}
+\newcommand{\accloss}[2]{\shortstack{#1\\[-1pt]{\scriptsize\textcolor{red!70!black}{(#2)}}}}
 
 \newcommand{\inputzhsection}[1]{%
   \begingroup
