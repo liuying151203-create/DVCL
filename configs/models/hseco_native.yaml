@@ -1,0 +1,22 @@
+name: hseco
+backend: native
+implementation: paper_derived
+paper:
+  title: Robust Heterogeneous GNNs via Semantic Attention and Contrastive Learning
+  doi: 10.1145/3746252.3761343
+
+# The paper does not publish concrete values for these fields. They must be
+# selected on the validation split and frozen before producing formal results.
+frozen: false
+hidden_dim: null
+heads: null
+view_thresholds: null
+global_threshold: null
+contrastive_weight: null
+perturbation:
+  method: null
+  rate: null
+
+similarity:
+  method: cosine
+  status: reproduction_assumption

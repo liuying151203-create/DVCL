@@ -1,0 +1,25 @@
+suite: dvcl_component_ablation
+protocol: dvcl_main
+dataset: acm
+model: dvcl
+variants:
+  - name: full
+    model_config:
+      dvcl_view_mode: both
+  - name: no_cl
+    model_config:
+      dvcl_view_mode: both_nocl
+  - name: topology_only
+    model_config:
+      dvcl_view_mode: topo
+  - name: feature_only
+    model_config:
+      dvcl_view_mode: feat
+attacks:
+  - name: clean
+    rates: [0]
+  - name: prbcd
+    rates: [5, 15, 25]
+  - name: heteprbcd
+    rates: [5, 15, 25]
+train_seeds: [1, 2, 3, 4, 5]

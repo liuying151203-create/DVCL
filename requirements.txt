@@ -1,0 +1,15 @@
+# Core versions pinned for reproducible DVCL benchmark environments.
+torch==2.1.2
+torchvision==0.16.2
+torchaudio==2.1.2
+torch-geometric==2.5.3
+numpy==1.26.4
+scipy==1.11.4
+pandas==2.2.2
+pyyaml==6.0.1
+scikit-learn==1.4.2
+tqdm==4.66.4
+
+# Install DGL with the wheel matching the local CUDA runtime.
+# Optional baselines may also require torch-scatter and torch-sparse wheels
+# matching the selected Torch/CUDA build.

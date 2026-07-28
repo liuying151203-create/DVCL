@@ -1,0 +1,18 @@
+protocol: hseco_paper_reproduction
+device: cuda:0
+
+datasets: [acm]
+models:
+  - name: hseco
+    backend: legacy
+attacks:
+  - name: clean
+    threat_model: poisoning
+    scope: global
+seeds:
+  split: [1]
+  attack: [1]
+  train: [1, 2, 3, 4, 5]
+training:
+  epochs: 200
+  patience: 100

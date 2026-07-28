@@ -1,0 +1,17 @@
+data/raw/
+data/processed/
+data/splits/
+data/attacks/
+data/target_attacks/
+outputs/
+checkpoints/
+*.pt
+*.pth
+*.pkl
+*.npz
+*.npy
+*.csv
+*.log
+__pycache__/
+.pytest_cache/
+*.egg-info/
