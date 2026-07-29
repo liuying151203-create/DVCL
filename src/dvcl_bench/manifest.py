@@ -1,7 +1,9 @@
 import hashlib
+import importlib.metadata
 import json
 import platform
 import subprocess
+from datetime import datetime, timezone
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -29,6 +31,27 @@ def git_commit(root: Path) -> Optional[str]:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+def git_dirty(root: Path) -> Optional[bool]:
+    result = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=str(root),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return bool(result.stdout.strip()) if result.returncode == 0 else None
+
+
+def package_versions():
+    result = {}
+    for name in ("torch", "dgl", "torch-geometric", "numpy", "scipy", "scikit-learn"):
+        try:
+            result[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            result[name] = None
+    return result
+
+
 def build_manifest(spec, project_root: Path, inputs: Dict[str, Path]) -> Dict[str, Any]:
     fingerprints = {
         name: {"path": str(path), "sha256": file_sha256(path)}
@@ -37,11 +60,14 @@ def build_manifest(spec, project_root: Path, inputs: Dict[str, Path]) -> Dict[st
     }
     return {
         "schema_version": 1,
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "experiment": asdict(spec),
         "inputs": fingerprints,
         "git_commit": git_commit(project_root),
+        "git_dirty": git_dirty(project_root),
         "python": platform.python_version(),
         "platform": platform.platform(),
+        "packages": package_versions(),
     }
 
 

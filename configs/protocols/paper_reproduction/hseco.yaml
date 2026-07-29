@@ -4,7 +4,10 @@ device: cuda:0
 datasets: [acm]
 models:
   - name: hseco
-    backend: legacy
+    backend: native
+    config:
+      legacy_checkpoint_semantics: true
+split_name_pattern: paper_seed_{seed}
 attacks:
   - name: clean
     threat_model: poisoning

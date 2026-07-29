@@ -1,0 +1,18 @@
+config:
+  hidden_dim: 128
+  heads: 4
+  dropout: 0.3
+  feature_mask_rate: 0.2
+  knn_k: 20
+  knn_mode: directed
+  view_mode: both
+  fusion_mode: concat
+  temperature: 0.5
+  lambda_han: 1.0
+  lambda_dvcl: 1.0
+  learning_rate: 0.005
+  weight_decay: 0.001
+  global_threshold: 0.002
+  semantic_hidden_dim: 64
+  semantic_heads: 8
+  legacy_checkpoint_semantics: false

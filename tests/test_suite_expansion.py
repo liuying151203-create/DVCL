@@ -1,0 +1,20 @@
+import importlib.util
+from pathlib import Path
+
+import pytest
+
+pytest.importorskip("yaml")
+
+ROOT = Path(__file__).resolve().parents[1]
+SPEC = importlib.util.spec_from_file_location("run_suite", ROOT / "scripts" / "run_suite.py")
+RUN_SUITE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(RUN_SUITE)
+
+
+def test_main_and_ablation_suite_sizes():
+    main = RUN_SUITE.load_config(ROOT / "configs" / "protocols" / "dvcl_main.yaml")
+    ablation = RUN_SUITE.load_config(
+        ROOT / "configs" / "suites" / "dvcl_component_ablation.yaml"
+    )
+    assert len(list(RUN_SUITE.commands(main, "python", ROOT))) == 220
+    assert len(list(RUN_SUITE.commands(ablation, "python", ROOT))) == 140

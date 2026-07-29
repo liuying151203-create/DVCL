@@ -34,6 +34,17 @@ def main() -> int:
     command = build_legacy_command(spec, layout, "python")
     assert command[command.index("--seed") + 1] == "9"
     assert command[command.index("--attack-seed") + 1] == "7"
+    native = ExperimentSpec(
+        protocol="dvcl_main",
+        dataset="acm",
+        split_name="paper_seed_1",
+        seeds=SeedSpec(split=1, attack=1, train=3),
+        attack=AttackSpec(name="clean", rate=0),
+        model=ModelSpec(name="dvcl", backend="native", config={"variant": "no_cl"}),
+    )
+    native_path = str(layout.run_dir(native)).replace("\\", "/")
+    assert "/dvcl/no_cl/clean/" in native_path
+    assert "split_seed_1/attack_seed_1/train_seed_3" in native_path
     print("DVCL experiment contracts: passed")
     return 0
 

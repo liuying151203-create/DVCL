@@ -7,9 +7,13 @@ datasets:
 
 models:
   - name: hseco
-    backend: legacy
+    backend: native
+    config_path: configs/models/hseco_native.yaml
   - name: dvcl
-    backend: legacy
+    backend: native
+    config_path: configs/models/dvcl.yaml
+
+split_name_pattern: paper_seed_{seed}
 
 attacks:
   - name: clean

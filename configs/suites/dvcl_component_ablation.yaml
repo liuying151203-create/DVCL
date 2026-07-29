@@ -2,19 +2,31 @@ suite: dvcl_component_ablation
 protocol: dvcl_main
 dataset: acm
 model: dvcl
+backend: native
+split_name: paper_seed_1
+split_seed: 1
+attack_seed: 1
+device: cuda:0
+training:
+  epochs: 200
+  patience: 100
 variants:
   - name: full
     model_config:
-      dvcl_view_mode: both
+      view_mode: both
+      lambda_dvcl: 1.0
   - name: no_cl
     model_config:
-      dvcl_view_mode: both_nocl
+      view_mode: both_nocl
+      lambda_dvcl: 0.0
   - name: topology_only
     model_config:
-      dvcl_view_mode: topo
+      view_mode: topo
+      lambda_dvcl: 0.0
   - name: feature_only
     model_config:
-      dvcl_view_mode: feat
+      view_mode: feat
+      lambda_dvcl: 0.0
 attacks:
   - name: clean
     rates: [0]

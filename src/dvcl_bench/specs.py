@@ -5,6 +5,7 @@ from typing import Any, Dict, Mapping
 SUPPORTED_DATASETS = {"acm", "dblp", "aminer", "imdb"}
 SUPPORTED_ATTACKS = {"clean", "rnd", "prbcd", "heteprbcd"}
 LEGACY_MODELS = {"hseco", "dvcl"}
+NATIVE_MODELS = {"hseco", "dvcl"}
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,8 @@ class ModelSpec:
             raise ValueError(f"Unsupported model backend: {self.backend}")
         if self.backend == "legacy" and self.name not in LEGACY_MODELS:
             raise ValueError(f"Legacy backend supports only: {sorted(LEGACY_MODELS)}")
+        if self.backend == "native" and self.name not in NATIVE_MODELS:
+            raise ValueError(f"Native backend supports only: {sorted(NATIVE_MODELS)}")
 
 
 @dataclass(frozen=True)

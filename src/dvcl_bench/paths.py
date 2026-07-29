@@ -44,12 +44,14 @@ class ExperimentLayout:
         )
 
     def run_dir(self, spec) -> Path:
+        variant = str(spec.model.config.get("variant", "default"))
         return (
             self.outputs
             / "runs"
             / spec.protocol
             / spec.dataset
             / spec.model.name
+            / variant
             / spec.attack.name
             / f"rate_{format_rate(spec.attack.rate)}"
             / f"split_seed_{spec.seeds.split}"
