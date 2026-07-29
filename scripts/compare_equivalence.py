@@ -52,7 +52,9 @@ def main() -> int:
     rendered = json.dumps(report, ensure_ascii=False, indent=2)
     print(rendered)
     if args.output:
-        Path(args.output).write_text(rendered, encoding="utf-8")
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(rendered, encoding="utf-8")
     return 0 if report["ok"] else 1
 
 

@@ -1,3 +1,5 @@
+import pickle
+
 import pytest
 
 np = pytest.importorskip("numpy")
@@ -6,7 +8,7 @@ sp = pytest.importorskip("scipy.sparse")
 
 from dvcl_bench.artifacts import CleanGraphArtifact
 from dvcl_bench.attacks import generate_rnd_attack, verify_attack
-from dvcl_bench.splits import build_split_artifact
+from dvcl_bench.splits import build_split_artifact, import_split_artifact
 
 
 def clean_fixture():
@@ -44,3 +46,29 @@ def test_random_attack_is_deterministic_and_reverse_consistent():
     assert (one.perturbed_hete_adjs["pa"] != two.perturbed_hete_adjs["pa"]).nnz == 0
     assert (one.perturbed_hete_adjs["pa"].T != one.perturbed_hete_adjs["ap"]).nnz == 0
     assert verify_attack(clean, split, one)["ok"]
+
+
+def test_imports_legacy_hseco_split_list(tmp_path):
+    clean = clean_fixture()
+    train = torch.tensor([True, False, False, False])
+    val = torch.tensor([False, True, False, False])
+    test = torch.tensor([False, False, True, True])
+    source = tmp_path / "legacy_split.pkl"
+    with source.open("wb") as stream:
+        pickle.dump(
+            [
+                torch.nonzero(train).view(-1).numpy(),
+                torch.nonzero(val).view(-1).numpy(),
+                torch.nonzero(test).view(-1).numpy(),
+                train.numpy(),
+                val.numpy(),
+                test.numpy(),
+                clean.labels.numpy(),
+            ],
+            stream,
+        )
+    split = import_split_artifact(clean, source, "legacy", seed=3)
+    assert split.protocol == "imported"
+    assert torch.equal(split.train_mask, train)
+    assert torch.equal(split.val_mask, val)
+    assert torch.equal(split.test_mask, test)

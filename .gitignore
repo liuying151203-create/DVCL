@@ -14,4 +14,5 @@ checkpoints/
 *.log
 __pycache__/
 .pytest_cache/
+.conda/
 *.egg-info/

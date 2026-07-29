@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pickle
 from pathlib import Path
 from typing import Any, Mapping, Tuple
 
@@ -36,6 +37,19 @@ def import_split_artifact(
     seed: int = 0,
 ) -> SplitArtifact:
     raw = _torch_load(Path(source))
+    if isinstance(raw, (list, tuple)) and len(raw) >= 6:
+        return _validated(
+            clean,
+            _make_split(
+                clean.dataset,
+                split_name,
+                seed,
+                "imported",
+                _to_mask(raw[3], len(clean.labels)),
+                _to_mask(raw[4], len(clean.labels)),
+                _to_mask(raw[5], len(clean.labels)),
+            ),
+        )
     if not isinstance(raw, Mapping) or any(
         name not in raw for name in ("train_mask", "val_mask", "test_mask")
     ):
@@ -146,3 +160,8 @@ def _torch_load(path: Path):
         return torch.load(path, map_location="cpu", weights_only=False)
     except TypeError:
         return torch.load(path, map_location="cpu")
+    except (RuntimeError, pickle.UnpicklingError):
+        if path.suffix.lower() != ".pkl":
+            raise
+        with path.open("rb") as stream:
+            return pickle.load(stream)
