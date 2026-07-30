@@ -133,15 +133,20 @@ manifest schema 版本为 2，并记录：
 
 ## 当前机器状态
 
-当前开发机没有可用 NVIDIA 驱动，因此：
+当前开发机实际配置了 NVIDIA 580.126.09 驱动和 7 张
+Tesla V100-PCIE-32GB。普通主机 shell 可以访问 GPU，但 Codex 文件沙箱
+默认不映射 `/dev/nvidia*`，因此沙箱内的 `nvidia-smi` 和
+`torch.cuda.is_available()` 会失败。
 
 - CPU 环境预检和真实反向 smoke 已通过；
 - 已创建项目内 GPU 环境 `.conda/dvcl-cu121-py39`；
 - 该环境使用 Python 3.9.25、Torch 2.1.2+cu121、DGL 1.1.3+cu121 和 PyG 2.5.3；
 - CUDA 依赖和 DGL 动态库导入已通过；
+- 在沙箱外使用 GPU 0 执行的 Torch/DGL/PyG 前向与反向 smoke 已通过；
 - CUDA 请求失败策略可以验证；
 - Python 3.11 GPU 环境目录 `.conda/dvcl-cu121-py311` 已初始化，但大体积 Torch wheel 尚未完成下载；
-- GPU 正向、反向及 ACM 单 epoch smoke 必须在目标 GPU 主机完成。
+- ACM HSeCo 单 epoch GPU Runner 已完成，checkpoint、history、metrics、status
+  和 manifest schema 2 均已生成。
 
 当前机器可执行以下命令检查已安装环境：
 
@@ -150,4 +155,6 @@ source scripts/activate_gpu_env.sh
 python scripts/check_environment.py --profile gpu
 ```
 
-由于没有可用 NVIDIA 驱动，报告应只在设备可用性检查处失败；这不代表 CUDA wheel 安装失败。接入目标 GPU 后必须重新执行带 `--smoke` 的完整预检。
+在普通主机 shell 中，带 `--smoke` 的完整 GPU 预检已通过。
+在未映射 GPU 设备的 Codex 沙箱内，报告会在设备可用性检查处失败；
+这是执行隔离限制，不代表驱动或 CUDA wheel 安装失败。

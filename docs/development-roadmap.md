@@ -67,8 +67,8 @@ PyTest             8.4.2
 
 GPU 环境位于 `.conda/dvcl-cu121-py39`，使用 Python 3.9.25、Torch
 2.1.2+cu121、DGL 1.1.3+cu121 和 Torch Geometric 2.5.3。CUDA wheel
-及动态库导入已通过；当前开发机没有可用 NVIDIA 驱动，因此 GPU 张量 smoke
-仍需在目标主机验收。
+及动态库导入已通过。当前开发机配置 7 张 Tesla V100-PCIE-32GB，
+在沙箱外执行的 GPU 张量前向与反向 smoke 已通过。
 
 已通过：
 
@@ -115,7 +115,7 @@ Artifact 层已完成：
 
 ### 2.5 尚未完成
 
-- GPU 环境已建立，但目标 GPU 主机验收尚未完成；
+- GPU 环境、张量 smoke 和 ACM 单 epoch GPU Runner 已验收；
 - DBLP clean、split 和攻击 artifact 尚未生成；
 - HSeCo 攻击场景模型 golden 尚未完成；
 - DVCL 模型 golden 尚未完成；
@@ -151,9 +151,11 @@ Artifact 层已完成：
 - manifest schema 2 环境审计；
 - 正式环境安装说明。
 
-当前开发机没有可用 NVIDIA 驱动，因此 CPU profile 已完成验收，CUDA
-wheel 和 DGL/PyG 导入已完成验收；GPU profile 的张量正向/反向和 ACM
-单 epoch GPU smoke 需要在目标 GPU 主机执行。GPU 验收通过前不得启动正式主实验。
+当前开发机宿主环境具有可用 NVIDIA 驱动和 7 张 Tesla V100。
+CPU profile、CUDA wheel、DGL/PyG 导入以及 GPU profile 张量正向/反向
+已完成验收。Codex 沙箱默认不映射 GPU 设备，所以 GPU 命令需在
+普通主机 shell 或授权的沙箱外执行。ACM HSeCo 单 epoch GPU Runner
+已完成，并正确生成 checkpoint、history、metrics、status 和 manifest。
 
 ### 4.1 目标
 
