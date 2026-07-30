@@ -15,6 +15,7 @@ if str(SRC) not in sys.path:
 
 from dvcl_bench.legacy import build_legacy_command, run_legacy
 from dvcl_bench.manifest import build_manifest, save_json
+from dvcl_bench.environment import resolve_device
 from dvcl_bench.paths import ExperimentLayout
 from dvcl_bench.specs import AttackSpec, ExperimentSpec, ModelSpec, SeedSpec
 
@@ -112,6 +113,7 @@ def main() -> int:
         "started_at": datetime.now(timezone.utc).isoformat(),
     }, status_path)
     try:
+        resolve_device(spec.device)
         if spec.model.backend == "legacy":
             command = build_legacy_command(spec, layout, args.python_bin)
             print(shlex.join(command))

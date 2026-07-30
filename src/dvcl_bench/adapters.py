@@ -10,6 +10,7 @@ import torch
 from torch import nn
 
 from .artifacts import AttackArtifact, CleanGraphArtifact, SplitArtifact
+from .environment import resolve_device
 from .models.dvcl import (
     DualViewContrastiveDefense,
     build_feature_knn_graph,
@@ -286,6 +287,4 @@ def _inputs(clean: CleanGraphArtifact, split: SplitArtifact, device):
 
 
 def _device(requested: str):
-    if requested.startswith("cuda") and not torch.cuda.is_available():
-        return torch.device("cpu")
-    return torch.device(requested)
+    return resolve_device(requested)

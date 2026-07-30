@@ -13,14 +13,24 @@
 
 ## 安装
 
-建议使用 Python 3.9–3.11。先根据本机 CUDA 安装匹配的 PyTorch、DGL 和 PyG，再安装项目：
+建议使用 Python 3.9–3.11。CPU 验证环境：
 
-```powershell
-pip install -r requirements.txt
-pip install -e .
+```bash
+pip install -r requirements-cpu.txt
+python scripts/check_environment.py --profile cpu --smoke
 ```
 
-DGL 需要单独选择与 PyTorch、CUDA 对应的 wheel。
+CUDA 12.1 正式实验环境：
+
+```bash
+conda create -p .conda/dvcl-cu121-py311 python=3.11 pip -y
+.conda/dvcl-cu121-py311/bin/python -m pip install -r requirements-cu121.txt
+DVCL_GPU_ENV="$PWD/.conda/dvcl-cu121-py311" \
+  source scripts/activate_gpu_env.sh
+python scripts/check_environment.py --profile gpu --smoke
+```
+
+正式协议请求 CUDA 时不会静默回退 CPU。完整安装和环境审计说明见 `docs/environment.md`。
 
 ## 准备实验产物
 
@@ -113,3 +123,7 @@ python scripts/summarize_results.py
 ## HSeCo 等效实现
 
 HSeCo 实现参考论文和可获得源码中的数据处理、元路径转换、两级净化、对比损失、早停和 checkpoint 行为。论文复现协议可启用旧式 checkpoint 语义；统一主协议恢复完整语义模块和分类模块。详细说明见 `docs/hseco.md`。
+
+## 后续开发路线
+
+当前工程状态、golden 对照覆盖、正式环境建设、DBLP 产物准备、主实验和消融实验的分阶段计划见 `docs/development-roadmap.md`。
