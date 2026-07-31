@@ -127,3 +127,6 @@ HSeCo 实现参考论文和可获得源码中的数据处理、元路径转换�
 ## 后续开发路线
 
 当前工程状态、golden 对照覆盖、正式环境建设、DBLP 产物准备、主实验和消融实验的分阶段计划见 `docs/development-roadmap.md`。
+
+已完成的 ACM 主实验、攻击平均、组件消融和结果完整性审计见
+`docs/acm-experiment-results.md`。
