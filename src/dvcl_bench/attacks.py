@@ -53,6 +53,7 @@ def import_prbcd_like_attack(
 ) -> AttackArtifact:
     source_file = Path(source_file)
     data = _torch_load(source_file)
+    validate_attack_context(clean, split, data)
     imported = pyg_attack_to_adjs(data)
     perturbed = {name: value.copy() for name, value in clean.hete_adjs.items()}
     for etype, value in imported.items():
@@ -87,6 +88,33 @@ def import_prbcd_like_attack(
         str(source_file.resolve()),
         file_sha256(source_file),
     )
+
+
+def validate_attack_context(
+    clean: CleanGraphArtifact,
+    split: SplitArtifact,
+    source,
+) -> None:
+    node_types = getattr(source, "node_types", None)
+    if node_types is None:
+        return
+    if clean.predict_ntype not in node_types:
+        raise ValueError(f"Attack source is missing target node type: {clean.predict_ntype}")
+    store = source[clean.predict_ntype]
+    checks = {
+        "features": (getattr(store, "x", None), clean.features, torch.float32),
+        "labels": (getattr(store, "y", None), clean.labels, torch.long),
+        "train_mask": (getattr(store, "train_mask", None), split.train_mask, torch.bool),
+        "val_mask": (getattr(store, "val_mask", None), split.val_mask, torch.bool),
+        "test_mask": (getattr(store, "test_mask", None), split.test_mask, torch.bool),
+    }
+    for name, (source_value, expected, dtype) in checks.items():
+        if source_value is None:
+            continue
+        current = torch.as_tensor(source_value).detach().cpu().to(dtype=dtype)
+        expected = expected.detach().cpu().to(dtype=dtype)
+        if not torch.equal(current, expected):
+            raise ValueError(f"Attack source {name} does not match the frozen artifact")
 
 
 def build_attack_artifact(
@@ -181,6 +209,7 @@ def perturbation_diff(clean_adjs, perturbed_adjs):
         }
         added_edges[etype] = added.tocsr()
         deleted_edges[etype] = deleted.tocsr()
+    stats["_global"] = _global_perturbation_stats(clean_adjs, stats)
     return stats, added_edges, deleted_edges
 
 
@@ -222,17 +251,65 @@ def verify_attack(
     recomputed, _, _ = perturbation_diff(clean.hete_adjs, attack.perturbed_hete_adjs)
     for etype, value in recomputed.items():
         claimed = attack.stats.get(etype)
+        if etype == "_global" and claimed is None:
+            continue
         if claimed is None:
             issues.append(f"missing stored stats for {etype}")
         elif any(claimed.get(key) != value.get(key) for key in ("n_add", "n_del")):
             issues.append(f"stored perturbation stats mismatch for {etype}")
+    budget = _budget_report(attack.attack_rate, recomputed["_global"])
+    if attack.target_nodes is None and not budget["ok"]:
+        issues.append(
+            "global perturbation budget mismatch: "
+            f"expected={budget['expected_changes']}, actual={budget['actual_changes']}"
+        )
     if attack.target_nodes is not None:
         target = attack.target_nodes.long()
         if target.numel() and (int(target.min()) < 0 or int(target.max()) >= len(clean.labels)):
             issues.append("target node index out of range")
         if target.numel() and not bool(split.test_mask[target].all()):
             issues.append("target nodes are not all in the test split")
-    return {"ok": not issues, "issues": issues, "stats": recomputed}
+    return {"ok": not issues, "issues": issues, "stats": recomputed, "budget": budget}
+
+
+def _global_perturbation_stats(clean_adjs, relation_stats):
+    processed = set()
+    selected = []
+    for etype in clean_adjs:
+        if etype in processed:
+            continue
+        reverse = etype[::-1]
+        selected.append(etype)
+        processed.add(etype)
+        if reverse in clean_adjs:
+            processed.add(reverse)
+    clean_edges = sum(int(relation_stats[name]["clean_edges"]) for name in selected)
+    perturbed_edges = sum(int(relation_stats[name]["perturbed_edges"]) for name in selected)
+    n_add = sum(int(relation_stats[name]["n_add"]) for name in selected)
+    n_del = sum(int(relation_stats[name]["n_del"]) for name in selected)
+    return {
+        "relations": selected,
+        "clean_edges": clean_edges,
+        "perturbed_edges": perturbed_edges,
+        "n_add": n_add,
+        "n_del": n_del,
+        "actual_rate": (n_add + n_del) / max(clean_edges, 1),
+    }
+
+
+def _budget_report(attack_rate, global_stats):
+    clean_edges = int(global_stats["clean_edges"])
+    expected_changes = int(clean_edges * _rate_fraction(float(attack_rate)))
+    actual_changes = int(global_stats["n_add"] + global_stats["n_del"])
+    tolerance = max(1, int(np.ceil(expected_changes * 0.02)))
+    return {
+        "ok": abs(actual_changes - expected_changes) <= tolerance,
+        "expected_changes": expected_changes,
+        "actual_changes": actual_changes,
+        "tolerance": tolerance,
+        "expected_rate": _rate_fraction(float(attack_rate)),
+        "actual_rate": float(global_stats["actual_rate"]),
+    }
 
 
 def _rate_fraction(rate: float) -> float:

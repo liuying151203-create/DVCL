@@ -7,7 +7,7 @@ import pytest
 
 pytest.importorskip("torch")
 
-from dvcl_bench.equivalence import compare_metrics
+from dvcl_bench.equivalence import compare_legacy_training_log, compare_metrics
 
 
 def test_metric_equivalence_uses_absolute_tolerance(tmp_path):
@@ -42,3 +42,26 @@ def test_compare_cli_creates_output_parent(tmp_path):
         check=True,
     )
     assert json.loads(output.read_text())["ok"]
+
+
+def test_compare_legacy_training_log(tmp_path):
+    reference = tmp_path / "legacy.log"
+    reference.write_text(
+        "0 |VAL Micro-F1: 0.5 , Macro-F1: 0.4\n"
+        "1 |VAL Micro-F1: 0.6 , Macro-F1: 0.5\n"
+        "@@@@test: 0.7 0.7 0.6\n",
+        encoding="utf-8",
+    )
+    history = tmp_path / "history.csv"
+    history.write_text(
+        "epoch,val_micro_f1,val_macro_f1\n0,0.5,0.4\n1,0.6,0.5\n",
+        encoding="utf-8",
+    )
+    metrics = tmp_path / "metrics.json"
+    metrics.write_text(
+        json.dumps({"metrics": {"accuracy": 0.7, "micro_f1": 0.7, "macro_f1": 0.6}}),
+        encoding="utf-8",
+    )
+    report = compare_legacy_training_log(reference, history, metrics, tolerance=0)
+    assert report["ok"]
+    assert report["epochs_compared"] == 2

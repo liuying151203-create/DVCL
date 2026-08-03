@@ -27,7 +27,7 @@ def build_split_artifact(
     else:
         raise ValueError(f"Unsupported split protocol: {protocol}")
     name = f"paper_seed_{seed}" if protocol == "paper" else f"seed_{seed}"
-    return _make_split(clean.dataset, name, seed, protocol, *masks)
+    return _validated(clean, _make_split(clean.dataset, name, seed, protocol, *masks))
 
 
 def import_split_artifact(

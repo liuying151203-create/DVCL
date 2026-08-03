@@ -7,7 +7,7 @@ torch = pytest.importorskip("torch")
 sp = pytest.importorskip("scipy.sparse")
 
 from dvcl_bench.artifacts import CleanGraphArtifact
-from dvcl_bench.attacks import generate_rnd_attack, verify_attack
+from dvcl_bench.attacks import generate_rnd_attack, validate_attack_context, verify_attack
 from dvcl_bench.splits import build_split_artifact, import_split_artifact
 
 
@@ -45,7 +45,32 @@ def test_random_attack_is_deterministic_and_reverse_consistent():
     two = generate_rnd_attack(clean, split, 25, 11)
     assert (one.perturbed_hete_adjs["pa"] != two.perturbed_hete_adjs["pa"]).nnz == 0
     assert (one.perturbed_hete_adjs["pa"].T != one.perturbed_hete_adjs["ap"]).nnz == 0
-    assert verify_attack(clean, split, one)["ok"]
+    report = verify_attack(clean, split, one)
+    assert report["ok"]
+    assert one.stats["_global"]["actual_rate"] == pytest.approx(0.25)
+    assert report["budget"]["ok"]
+
+
+def test_attack_context_rejects_a_different_split():
+    clean = clean_fixture()
+    split = build_split_artifact(clean, 1, "random", 0.5, 0.25, 0.25)
+
+    class Store:
+        x = clean.features
+        y = clean.labels
+        train_mask = split.val_mask
+        val_mask = split.train_mask
+        test_mask = split.test_mask
+
+    class Source:
+        node_types = ["paper"]
+
+        def __getitem__(self, name):
+            assert name == "paper"
+            return Store()
+
+    with pytest.raises(ValueError, match="train_mask"):
+        validate_attack_context(clean, split, Source())
 
 
 def test_imports_legacy_hseco_split_list(tmp_path):

@@ -2,7 +2,7 @@
 
 ## 1. 文档目标
 
-本文档基于 2026-07-29 的仓库状态，说明阶段 1–3 完成后的后续开发、验证和正式实验计划。重点是：
+本文档基于 2026-08-03 的仓库状态，说明阶段 1–3 完成后的后续开发、验证和正式实验计划。重点是：
 
 - 固化可复现运行环境；
 - 补齐 DBLP 数据和攻击产物；
@@ -72,7 +72,7 @@ GPU 环境位于 `.conda/dvcl-cu121-py39`，使用 Python 3.9.25、Torch
 
 已通过：
 
-- 完整 PyTest，24 项测试全部通过；
+- 完整 PyTest，27 项测试全部通过；
 - 所有 Python 文件静态编译；
 - `DVCL experiment contracts: passed`；
 - `pip check`；
@@ -94,7 +94,22 @@ GPU 环境位于 `.conda/dvcl-cu121-py39`，使用 Python 3.9.25、Torch
 
 主协议使用的 10 个攻击 artifact 已绑定 `paper_seed_1`，并全部通过攻击验证。
 
-### 2.4 当前 golden 对照状态
+### 2.4 当前 DBLP artifact 状态
+
+已生成并验收：
+
+- DBLP clean artifact，节点数与关系边数和旧 HSeCo 数据精确一致；
+- `paper_seed_1` 全局实验 split，405/405/3247；
+- PRBCD 5%、10%、15%、20%、25%；
+- HetePRBCD 5%、10%、15%、20%、25%；
+- 攻击源特征、标签、train/val/test mask 强制一致性检查；
+- 去除反向边重复计数后的全局攻击预算统计；
+- 主协议 24 个唯一输入的哈希、身份和攻击验证，24/24 通过。
+
+DBLP 全局实验沿用旧 HSeCo PRBCD/HetePRBCD 源文件绑定的随机 10/10/80
+划分。PyG 官方 400/400/3257 mask 属于另一实验口径，不能与当前全局攻击源混用。
+
+### 2.5 当前 golden 对照状态
 
 Artifact 层已完成：
 
@@ -113,15 +128,23 @@ Artifact 层已完成：
 
 该结果证明在相同 CPU、依赖、artifact 和随机种子下，原生 HSeCo clean 训练行为与旧实现一致。
 
-### 2.5 尚未完成
+模型层已完成 DBLP clean、train seed 1 的同环境 GPU 严格对照：
+
+- 旧 HSeCo 和原生 HSeCo 共比较 200 个验证 epoch；
+- 验证 Micro-F1 和 Macro-F1 轨迹最大差异均为 0；
+- 最终 Accuracy、Micro-F1 和 Macro-F1 差异均为 0；
+- reference 命令显式冻结 `negative_noise_rate=0.01`，避免旧仓库 YAML 的
+  `0.001` 默认覆盖统一协议配置。
+
+### 2.6 尚未完成
 
 - GPU 环境、张量 smoke 和 ACM 单 epoch GPU Runner 已验收；
-- DBLP clean、split 和攻击 artifact 尚未生成；
 - HSeCo 攻击场景模型 golden 尚未完成；
 - DVCL 模型 golden 尚未完成；
-- 220 次主实验尚未运行；
-- 140 次消融实验尚未运行；
-- 正式论文表格和结果审计报告尚未生成。
+- ACM 110 次主实验已经完成，DBLP 110 次主实验尚未运行；
+- ACM 140 次消融实验已经完成；
+- ACM 结果表已生成，DBLP 与双数据集论文表尚未生成；
+- 其他基线和目标攻击尚未进入当前统一原生协议。
 
 ## 3. 执行原则
 
@@ -198,6 +221,12 @@ Torch Geometric 2.5.3
 
 ## 5. 阶段 5：DBLP 数据与攻击产物
 
+### 5.0 实施状态
+
+阶段 5 已完成。DBLP clean、全局实验 split 和 10 个攻击 artifact 已全部生成，
+并通过统一协议输入审计。新增 `scripts/check_protocol_inputs.py`，可按协议 YAML
+检查所有输入文件、哈希、数据身份、split 绑定、反向边和全局扰动预算。
+
 ### 5.1 目标
 
 补齐 DBLP clean、固定 split 和全部攻击条件，使两个数据集都满足主实验输入要求。
@@ -229,6 +258,12 @@ Torch Geometric 2.5.3
 - DBLP artifact 验证报告。
 
 ## 6. 阶段 6：扩大 Golden 覆盖
+
+### 6.0 实施状态
+
+- 新增旧训练 stdout 与原生 `history.csv`/`metrics.json` 的自动比较入口；
+- DBLP HSeCo clean、train seed 1、同 V100 环境已达到 200 epochs 严格零差异；
+- ACM 攻击条件、DBLP 攻击条件和 DVCL golden 仍待扩展。
 
 ### 6.1 目标
 
@@ -296,6 +331,15 @@ DVCL：
 
 ## 7. 阶段 7：GPU Pilot 与主实验
 
+### 7.0 实施状态
+
+- ACM 110 次主实验已完成并汇总；
+- DBLP HSeCo 与 DVCL 在 clean、PRBCD 5% 和 HetePRBCD 5% 上的 6 个单 epoch
+  GPU pilot 已完成；
+- 6 个 pilot 均使用 Tesla V100 和 `cuda:0`，status 为 `completed`；
+- 两个攻击条件的 `attack_verification.json` 与全局预算检查均通过；
+- DBLP 正式 110 次主实验尚未启动。
+
 ### 7.1 目标
 
 先通过小规模 GPU pilot 验证资源、耗时、显存和恢复机制，再执行 220 次主实验。
@@ -343,6 +387,11 @@ DVCL：
 
 ## 8. 阶段 8：消融实验
 
+### 8.0 实施状态
+
+ACM 140 次 DVCL 组件消融已全部完成，所有条件包含 5 个训练种子，完整 DVCL
+与主实验重叠条件结果一致。DBLP 消融不在当前 140 次 suite 范围内。
+
 ### 8.1 目标
 
 在主实验协议稳定后执行 140 次 DVCL 消融，避免在主模型仍变化时提前生成无效结果。
@@ -370,6 +419,12 @@ DVCL：
 - 完整 DVCL 的消融基线与主实验对应结果一致。
 
 ## 9. 阶段 9：汇总、审计与发布
+
+### 9.0 实施状态
+
+ACM 主实验、Attack Average 和组件消融已汇总到
+`docs/acm-experiment-results.md`。DBLP 结果、双数据集论文表、显著性检验和
+最终发布归档仍待完成。
 
 ### 9.1 目标
 

@@ -11,9 +11,14 @@ if str(SRC) not in sys.path:
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Compare legacy and native golden artifacts/runs.")
-    parser.add_argument("--kind", required=True, choices=["clean", "split", "attack", "metrics"])
+    parser.add_argument(
+        "--kind",
+        required=True,
+        choices=["clean", "split", "attack", "metrics", "training-log"],
+    )
     parser.add_argument("--reference", required=True)
     parser.add_argument("--current", required=True)
+    parser.add_argument("--current-history")
     parser.add_argument("--legacy-root")
     parser.add_argument("--tolerance", type=float, default=0.005)
     parser.add_argument("--output")
@@ -25,7 +30,16 @@ def main() -> int:
     if args.legacy_root:
         sys.path.insert(0, str(Path(args.legacy_root).resolve()))
     from dvcl_bench import equivalence
-    if args.kind == "metrics":
+    if args.kind == "training-log":
+        if not args.current_history:
+            raise ValueError("--current-history is required for training-log comparisons")
+        report = equivalence.compare_legacy_training_log(
+            Path(args.reference),
+            Path(args.current_history),
+            Path(args.current),
+            args.tolerance,
+        )
+    elif args.kind == "metrics":
         report = equivalence.compare_metrics(
             Path(args.reference), Path(args.current), args.tolerance
         )

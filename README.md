@@ -57,6 +57,15 @@ python scripts/generate_attack.py --dataset acm --split paper_seed_1 --attack pr
 python scripts/verify_attack.py --dataset acm --split paper_seed_1 --attack-path data/attacks/acm/prbcd/rate_5/seed_1/attack.pt
 ```
 
+按协议一次性审计全部 clean、split 和 attack artifact：
+
+```powershell
+python scripts/check_protocol_inputs.py --config configs/protocols/dvcl_main.yaml
+```
+
+DBLP 全局实验的 `paper_seed_1` 使用与现有 PRBCD/HetePRBCD 源文件一致的
+405/405/3247 划分。导入器会拒绝特征、标签或 split mask 不一致的攻击源。
+
 旧 HSeCo artifact 可使用 `scripts/import_legacy_artifact.py` 转换为当前版本化格式。
 
 ## 运行实验
