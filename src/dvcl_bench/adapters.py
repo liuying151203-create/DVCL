@@ -24,15 +24,109 @@ from .models.semantic import (
     semantic_graph,
     transition_edges,
 )
+from .models.baselines import HeteroSAGE
+from .graph_adapter import hete_adjs_to_dgl, meta_path_adjacency
 from .training import (
     DVCLTrainConfig,
+    HANTrainConfig,
     HSeCoTrainConfig,
+    HeteroSAGETrainConfig,
     LegacyEarlyStopping,
     TrainingResult,
     classification_metrics,
     save_checkpoint,
     set_random_seed,
 )
+
+
+def train_han(
+    clean: CleanGraphArtifact,
+    split: SplitArtifact,
+    attack: Optional[AttackArtifact],
+    config: HANTrainConfig,
+    train_seed: int,
+    epochs: int,
+    patience: int,
+    device: str,
+    checkpoint_path: Path,
+) -> TrainingResult:
+    import dgl
+
+    set_random_seed(train_seed)
+    target = _device(device)
+    features, labels, masks = _inputs(clean, split, target)
+    selected_adjs = _selected_adjs(clean, attack)
+    views = [
+        dgl.from_scipy(meta_path_adjacency(selected_adjs, path)).to(target)
+        for path in clean.meta_paths
+    ]
+    model = SemanticHAN(
+        len(clean.meta_paths), features.shape[1], config.hidden_dim,
+        clean.num_classes, config.heads, config.dropout,
+    ).to(target)
+    result = _train_supervised(
+        model=model,
+        forward=lambda: model(features, views),
+        labels=labels,
+        masks=masks,
+        config=config,
+        epochs=epochs,
+        patience=patience,
+        checkpoint_path=checkpoint_path,
+    )
+    result.diagnostics.update({
+        "semantic_attention": model.semantic_weights().detach().cpu().tolist(),
+        "meta_path_edges": [int(graph.num_edges()) for graph in views],
+    })
+    return result
+
+
+def train_heterosage(
+    clean: CleanGraphArtifact,
+    split: SplitArtifact,
+    attack: Optional[AttackArtifact],
+    config: HeteroSAGETrainConfig,
+    train_seed: int,
+    epochs: int,
+    patience: int,
+    device: str,
+    checkpoint_path: Path,
+) -> TrainingResult:
+    set_random_seed(train_seed)
+    target = _device(device)
+    features, labels, masks = _inputs(clean, split, target)
+    graph = hete_adjs_to_dgl(
+        _selected_adjs(clean, attack), clean.canonical_etypes, clean.node_counts
+    ).to(target)
+    node_features = {
+        node_type: features.new_zeros((count, features.shape[1]))
+        for node_type, count in clean.node_counts.items()
+    }
+    node_features[clean.predict_ntype] = features
+    model = HeteroSAGE(
+        clean.canonical_etypes,
+        features.shape[1],
+        config.hidden_dim,
+        clean.num_classes,
+        config.num_layers,
+        config.dropout,
+    ).to(target)
+    result = _train_supervised(
+        model=model,
+        forward=lambda: model(graph, node_features)[clean.predict_ntype],
+        labels=labels,
+        masks=masks,
+        config=config,
+        epochs=epochs,
+        patience=patience,
+        checkpoint_path=checkpoint_path,
+    )
+    result.diagnostics.update({
+        "num_layers": config.num_layers,
+        "heterogeneous_edges": int(graph.num_edges()),
+        "non_target_feature_fill": "zero",
+    })
+    return result
 
 
 def train_hseco(
@@ -260,6 +354,59 @@ def train_dvcl(
     if model.last_gate_weight is not None:
         diagnostics["gate_mean"] = float(model.last_gate_weight.mean())
     return TrainingResult(metrics, history, stopper.best_epoch, stopped_epoch, diagnostics)
+
+
+def _train_supervised(
+    model,
+    forward,
+    labels,
+    masks,
+    config,
+    epochs,
+    patience,
+    checkpoint_path,
+):
+    optimizer = torch.optim.Adam(
+        model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
+    )
+    loss_fn = nn.CrossEntropyLoss()
+    stopper = LegacyEarlyStopping(patience)
+    history = []
+    stopped_epoch = 0
+    for epoch in range(epochs):
+        model.train()
+        logits = forward()
+        classification_loss = loss_fn(logits[masks["train"]], labels[masks["train"]])
+        optimizer.zero_grad()
+        classification_loss.backward()
+        optimizer.step()
+
+        model.eval()
+        with torch.no_grad():
+            validation_logits = forward()
+            validation_loss = loss_fn(
+                validation_logits[masks["val"]], labels[masks["val"]]
+            )
+            validation = classification_metrics(
+                validation_logits[masks["val"]], labels[masks["val"]]
+            )
+        history.append({
+            "epoch": epoch,
+            "classification_loss": float(classification_loss.detach()),
+            "val_loss": float(validation_loss),
+            **{f"val_{key}": value for key, value in validation.items()},
+        })
+        stopped_epoch = epoch
+        if stopper.step(float(validation_loss), validation["accuracy"], model, epoch):
+            break
+
+    stopper.restore(model)
+    model.eval()
+    with torch.no_grad():
+        test_logits = forward()
+    metrics = classification_metrics(test_logits[masks["test"]], labels[masks["test"]])
+    save_checkpoint(checkpoint_path, model, config, stopper.best_epoch)
+    return TrainingResult(metrics, history, stopper.best_epoch, stopped_epoch)
 
 
 def _selected_adjs(

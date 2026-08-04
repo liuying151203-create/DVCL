@@ -18,3 +18,10 @@ def test_main_and_ablation_suite_sizes():
     )
     assert len(list(RUN_SUITE.commands(main, "python", ROOT))) == 220
     assert len(list(RUN_SUITE.commands(ablation, "python", ROOT))) == 140
+
+
+def test_baseline_suite_size():
+    baseline = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" / "baseline_main.yaml"
+    )
+    assert len(list(RUN_SUITE.commands(baseline, "python", ROOT))) == 220

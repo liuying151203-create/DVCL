@@ -75,6 +75,24 @@ class DVCLTrainConfig:
 
 
 @dataclass
+class HANTrainConfig:
+    hidden_dim: int = 64
+    heads: int = 8
+    dropout: float = 0.3
+    learning_rate: float = 0.005
+    weight_decay: float = 0.001
+
+
+@dataclass
+class HeteroSAGETrainConfig:
+    hidden_dim: int = 64
+    num_layers: int = 2
+    dropout: float = 0.5
+    learning_rate: float = 0.01
+    weight_decay: float = 0.001
+
+
+@dataclass
 class TrainingResult:
     metrics: Dict[str, float]
     history: List[Dict[str, float]]

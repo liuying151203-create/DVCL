@@ -2,12 +2,12 @@
 
 ## 1. 文档目标
 
-本文档基于 2026-08-03 的仓库状态，说明阶段 1–3 完成后的后续开发、验证和正式实验计划。重点是：
+本文档基于 2026-08-04 的仓库状态，说明当前工程、验证和正式实验进展及后续计划。重点是：
 
 - 固化可复现运行环境；
-- 补齐 DBLP 数据和攻击产物；
 - 扩大旧 HSeCo 与原生实现的 golden 对照覆盖；
-- 按先试运行、后主实验、再消融的顺序生成正式结果；
+- 接入统一 artifact 协议下的其他异构图基线；
+- 完成跨数据集论文表、统计检验和发布归档；
 - 为最终论文表格、结果审计和代码发布建立明确验收门槛。
 
 本路线中的“完成”不仅表示代码能够运行，还要求输入 artifact、随机种子、软件环境、checkpoint 和输出指标均可追溯。
@@ -141,10 +141,13 @@ Artifact 层已完成：
 - GPU 环境、张量 smoke 和 ACM 单 epoch GPU Runner 已验收；
 - HSeCo 攻击场景模型 golden 尚未完成；
 - DVCL 模型 golden 尚未完成；
-- ACM 110 次主实验已经完成，DBLP 110 次主实验尚未运行；
+- 13 条 HSeCo/DVCL Golden 首批矩阵已配置并通过 dry-run，正式 GPU 报告待生成；
+- ACM 和 DBLP 共 220 次主实验已经完成；
 - ACM 140 次消融实验已经完成；
-- ACM 结果表已生成，DBLP 与双数据集论文表尚未生成；
-- 其他基线和目标攻击尚未进入当前统一原生协议。
+- ACM、DBLP 独立结果表和双数据集论文总表已经生成；
+- HAN、HeteroSAGE 已进入统一原生协议，220/220 次基线实验已完成并汇总；
+  但全部 manifest 为 `git_dirty=true`，干净提交复跑尚未完成；
+- 其他鲁棒基线和目标攻击尚未进入当前统一原生协议。
 
 ## 3. 执行原则
 
@@ -263,7 +266,9 @@ Torch Geometric 2.5.3
 
 - 新增旧训练 stdout 与原生 `history.csv`/`metrics.json` 的自动比较入口；
 - DBLP HSeCo clean、train seed 1、同 V100 环境已达到 200 epochs 严格零差异；
-- ACM 攻击条件、DBLP 攻击条件和 DVCL golden 仍待扩展。
+- 新增 13 条配置驱动 Golden 矩阵、双仓库提交审计、输入哈希、脏仓库保护和
+  单条件/汇总报告；
+- 13 条 reference/current 命令已通过 dry-run，正式 GPU 对照仍待执行。
 
 ### 6.1 目标
 
@@ -338,7 +343,8 @@ DVCL：
   GPU pilot 已完成；
 - 6 个 pilot 均使用 Tesla V100 和 `cuda:0`，status 为 `completed`；
 - 两个攻击条件的 `attack_verification.json` 与全局预算检查均通过；
-- DBLP 正式 110 次主实验尚未启动。
+- DBLP 正式 110 次主实验已完成并汇总；
+- 220 次主实验均来自干净提交，且每个条件包含 5 个训练种子。
 
 ### 7.1 目标
 
@@ -423,7 +429,10 @@ ACM 140 次 DVCL 组件消融已全部完成，所有条件包含 5 个训练种
 ### 9.0 实施状态
 
 ACM 主实验、Attack Average 和组件消融已汇总到
-`docs/acm-experiment-results.md`。DBLP 结果、双数据集论文表、显著性检验和
+`docs/acm-experiment-results.md`，DBLP 主实验和 Attack Average 已汇总到
+`docs/dblp-experiment-results.md`，跨数据集论文表已由
+`scripts/generate_paper_tables.py` 生成到 `docs/paper-experiment-tables.md`。
+当前总表已纳入 HAN 和 HeteroSAGE 暂定结果。基线干净提交复跑、显著性检验和
 最终发布归档仍待完成。
 
 ### 9.1 目标

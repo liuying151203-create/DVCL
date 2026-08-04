@@ -5,7 +5,7 @@ from typing import Any, Dict, Mapping
 SUPPORTED_DATASETS = {"acm", "dblp", "aminer", "imdb"}
 SUPPORTED_ATTACKS = {"clean", "rnd", "prbcd", "heteprbcd"}
 LEGACY_MODELS = {"hseco", "dvcl"}
-NATIVE_MODELS = {"hseco", "dvcl"}
+NATIVE_MODELS = {"hseco", "dvcl", "han", "heterosage"}
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,79 @@
+suite: hseco_dvcl_golden
+protocol: model_golden
+output_root: outputs/equivalence/model_golden
+device: cuda:0
+tolerance: 0.0
+
+training:
+  epochs: 200
+  patience: 100
+
+seeds:
+  split: 1
+  attack: 1
+  train: 1
+
+models:
+  hseco:
+    config_path: configs/models/hseco_native.yaml
+  dvcl:
+    config_path: configs/models/dvcl.yaml
+
+cases:
+  - id: acm_hseco_clean
+    model: hseco
+    dataset: acm
+  - id: acm_hseco_prbcd_5
+    model: hseco
+    dataset: acm
+    attack: prbcd
+    rate: 5
+  - id: acm_hseco_prbcd_25
+    model: hseco
+    dataset: acm
+    attack: prbcd
+    rate: 25
+  - id: acm_hseco_heteprbcd_5
+    model: hseco
+    dataset: acm
+    attack: heteprbcd
+    rate: 5
+  - id: acm_hseco_heteprbcd_25
+    model: hseco
+    dataset: acm
+    attack: heteprbcd
+    rate: 25
+  - id: dblp_hseco_clean
+    model: hseco
+    dataset: dblp
+  - id: dblp_hseco_prbcd_15
+    model: hseco
+    dataset: dblp
+    attack: prbcd
+    rate: 15
+  - id: dblp_hseco_heteprbcd_15
+    model: hseco
+    dataset: dblp
+    attack: heteprbcd
+    rate: 15
+  - id: acm_dvcl_clean
+    model: dvcl
+    dataset: acm
+  - id: acm_dvcl_prbcd_5
+    model: dvcl
+    dataset: acm
+    attack: prbcd
+    rate: 5
+  - id: acm_dvcl_heteprbcd_5
+    model: dvcl
+    dataset: acm
+    attack: heteprbcd
+    rate: 5
+  - id: dblp_dvcl_clean
+    model: dvcl
+    dataset: dblp
+  - id: dblp_dvcl_heteprbcd_15
+    model: dvcl
+    dataset: dblp
+    attack: heteprbcd
+    rate: 15

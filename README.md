@@ -1,6 +1,6 @@
 # DVCL 实验代码
 
-本仓库用于在统一数据、划分、攻击和评估协议下运行 DVCL 与异构图鲁棒性基线。当前原生支持 ACM、DBLP、HSeCo 和 DVCL。
+本仓库用于在统一数据、划分、攻击和评估协议下运行 DVCL 与异构图鲁棒性基线。当前原生支持 ACM、DBLP、HSeCo、DVCL、HAN 和 HeteroSAGE。
 
 ## 实验流程
 
@@ -93,7 +93,18 @@ python scripts/run_suite.py --config configs/protocols/dvcl_main.yaml --continue
 - 种子：固定 split seed 和 attack seed，运行 5 个 train seed；
 - 指标：Accuracy、Micro-F1、Macro-F1。
 
-其他基线将在相同 artifact 接口上逐个接入，不能直接混用原论文在不同划分或攻击协议下的数字。
+HAN 和 HeteroSAGE 基线使用独立的 220 次统一协议矩阵：
+
+```powershell
+python scripts/run_suite.py --config configs/protocols/baseline_main.yaml --dry-run
+python scripts/run_suite.py --config configs/protocols/baseline_main.yaml --continue-on-error
+```
+
+具体模型语义和超参数见 `docs/baselines.md`。不能直接混用原论文在不同划分或
+攻击协议下的数字。
+
+HAN 和 HeteroSAGE 的 220 次矩阵已完成，当前结果及审计状态见
+`docs/baselines.md`。
 
 ## 消融实验
 
@@ -129,9 +140,19 @@ python scripts/summarize_results.py
 
 结果写入 `outputs/summaries/`，包括单次结果、均值标准差和跨攻击条件平均值。
 
+从 `dvcl_main` 的 360 次主实验与消融运行生成论文总表：
+
+```powershell
+python scripts/generate_paper_tables.py
+python scripts/generate_paper_tables.py --check
+```
+
 ## HSeCo 等效实现
 
 HSeCo 实现参考论文和可获得源码中的数据处理、元路径转换、两级净化、对比损失、早停和 checkpoint 行为。论文复现协议可启用旧式 checkpoint 语义；统一主协议恢复完整语义模块和分类模块。详细说明见 `docs/hseco.md`。
+
+批量 Golden 对照使用 `configs/golden/hseco_dvcl.yaml`，执行和审计规则见
+`docs/golden.md`。
 
 ## 后续开发路线
 
@@ -139,3 +160,9 @@ HSeCo 实现参考论文和可获得源码中的数据处理、元路径转换�
 
 已完成的 ACM 主实验、攻击平均、组件消融和结果完整性审计见
 `docs/acm-experiment-results.md`。
+
+已完成的 DBLP 主实验、攻击平均和结果分析见
+`docs/dblp-experiment-results.md`。
+
+跨数据集主实验、攻击平均与 ACM 消融论文表见
+`docs/paper-experiment-tables.md`。

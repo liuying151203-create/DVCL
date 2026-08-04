@@ -45,6 +45,8 @@ def main() -> int:
     native_path = str(layout.run_dir(native)).replace("\\", "/")
     assert "/dvcl/no_cl/clean/" in native_path
     assert "split_seed_1/attack_seed_1/train_seed_3" in native_path
+    ModelSpec(name="han", backend="native")
+    ModelSpec(name="heterosage", backend="native")
     print("DVCL experiment contracts: passed")
     return 0
 
