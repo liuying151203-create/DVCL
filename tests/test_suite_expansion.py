@@ -27,6 +27,13 @@ def test_baseline_suite_size():
     assert len(list(RUN_SUITE.commands(baseline, "python", ROOT))) == 220
 
 
+def test_corrected_dblp_poisoning_suite_size():
+    config = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" / "dblp_poisoning_main_v1.yaml"
+    )
+    assert len(list(RUN_SUITE.commands(config, "python", ROOT))) == 220
+
+
 def test_attack_path_pattern_is_expanded():
     config = {
         "protocol": "pilot",
