@@ -1,0 +1,42 @@
+protocol: dblp_attack_protocol_pilot_v2
+device: cuda:0
+
+datasets:
+  - dblp
+
+models:
+  - name: han
+    backend: native
+    config_path: configs/models/han.yaml
+  - name: heterosage
+    backend: native
+    config_path: configs/models/heterosage.yaml
+  - name: hseco
+    backend: native
+    config_path: configs/models/hseco_native.yaml
+  - name: dvcl
+    backend: native
+    config_path: configs/models/dvcl.yaml
+
+split_name_pattern: paper_seed_{seed}
+
+attacks:
+  - name: prbcd
+    rates: [5, 25]
+    threat_model: poisoning
+    scope: global
+    path_pattern: outputs/pilots/attack_protocol/artifacts/{dataset}/{attack}/rate_{rate}/attack.pt
+  - name: heteprbcd
+    rates: [5, 25]
+    threat_model: poisoning
+    scope: global
+    path_pattern: outputs/pilots/attack_protocol/artifacts/{dataset}/{attack}/rate_{rate}/attack.pt
+
+seeds:
+  split: [1]
+  attack: [1]
+  train: [1]
+
+training:
+  epochs: 200
+  patience: 100

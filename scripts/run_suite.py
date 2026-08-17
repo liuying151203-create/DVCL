@@ -87,7 +87,7 @@ def command_for(
     python_bin, protocol, dataset, model, backend, attack, rate,
     split_seed, attack_seed, train_seed, training, device, model_config, split_name,
 ):
-    return [
+    command = [
         python_bin,
         str(ROOT / "scripts" / "run_experiment.py"),
         "--protocol", protocol,
@@ -107,6 +107,14 @@ def command_for(
         "--patience", str(training.get("patience", 100)),
         "--model-config-json", json.dumps(model_config, separators=(",", ":")),
     ]
+    if attack.get("path_pattern"):
+        command.extend([
+            "--attack-path",
+            attack["path_pattern"].format(
+                dataset=dataset, attack=attack["name"], rate=f"{rate:g}", seed=attack_seed
+            ),
+        ])
+    return command
 
 
 def main() -> int:

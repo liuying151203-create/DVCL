@@ -7,7 +7,12 @@ torch = pytest.importorskip("torch")
 sp = pytest.importorskip("scipy.sparse")
 
 from dvcl_bench.artifacts import CleanGraphArtifact
-from dvcl_bench.attacks import generate_rnd_attack, validate_attack_context, verify_attack
+from dvcl_bench.attacks import (
+    build_attack_artifact,
+    generate_rnd_attack,
+    validate_attack_context,
+    verify_attack,
+)
 from dvcl_bench.splits import build_split_artifact, import_split_artifact
 
 
@@ -49,6 +54,47 @@ def test_random_attack_is_deterministic_and_reverse_consistent():
     assert report["ok"]
     assert one.stats["_global"]["actual_rate"] == pytest.approx(0.25)
     assert report["budget"]["ok"]
+    assert report["split_perturbation"]["predict_ntype"] == "paper"
+
+
+def test_attack_verification_warns_about_training_split_concentration():
+    size = 20
+    forward = sp.eye(size, format="csr", dtype=np.int8)
+    clean = CleanGraphArtifact(
+        dataset="acm",
+        version="acm-concentration-test",
+        predict_ntype="paper",
+        node_counts={"paper": size, "author": size},
+        hete_adjs={"pa": forward, "ap": forward.T.tocsr()},
+        features=torch.eye(size),
+        labels=torch.arange(size) % 2,
+        num_classes=2,
+        meta_paths=[["pa", "ap"]],
+        canonical_etypes=[("paper", "pa", "author"), ("author", "ap", "paper")],
+        stats={},
+    )
+    split = build_split_artifact(clean, 1, "random", 0.1, 0.1, 0.8)
+    train_node = int(split.train_idx[0])
+    perturbed = forward.tolil(copy=True)
+    candidates = [index for index in range(size) if index != train_node][:10]
+    perturbed[train_node, candidates] = 1
+    perturbed = perturbed.tocsr()
+    attack = build_attack_artifact(
+        clean,
+        split,
+        "heteprbcd",
+        50,
+        1,
+        {"pa": perturbed, "ap": perturbed.T.tocsr()},
+        None,
+        "test",
+    )
+    report = verify_attack(clean, split, attack)
+    train_stats = report["split_perturbation"]["_global"]["train"]
+    assert report["ok"]
+    assert train_stats["change_share"] == pytest.approx(1.0)
+    assert train_stats["enrichment"] == pytest.approx(10.0)
+    assert report["warnings"]
 
 
 def test_attack_context_rejects_a_different_split():

@@ -27,6 +27,7 @@ def parse_args():
     parser.add_argument("--backend", default="native", choices=["legacy", "native", "openhgnn"])
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--attack", default="clean")
+    parser.add_argument("--attack-path")
     parser.add_argument("--rate", type=float, default=0)
     parser.add_argument("--threat-model", default="poisoning", choices=["poisoning", "evasion"])
     parser.add_argument("--scope", default="global", choices=["global", "target"])
@@ -60,13 +61,13 @@ def build_spec(args, extra):
     )
 
 
-def input_paths(spec, layout):
+def input_paths(spec, layout, attack_path=None):
     values = {
         "clean": layout.clean_path(spec.dataset),
         "split": layout.split_path(spec.dataset, spec.split_name),
     }
     if spec.attack.name != "clean":
-        values["attack"] = layout.attack_path(
+        values["attack"] = Path(attack_path) if attack_path else layout.attack_path(
             spec.dataset, spec.attack.name, spec.attack.rate, spec.seeds.attack
         )
     return values
@@ -95,7 +96,7 @@ def main() -> int:
             print(f"Skip completed run: {run_dir}")
             return 0
 
-    inputs = input_paths(spec, layout)
+    inputs = input_paths(spec, layout, args.attack_path)
     missing = [str(path) for path in inputs.values() if not path.is_file()]
     if missing:
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -157,6 +158,8 @@ def run_native(spec, inputs, run_dir):
         attack = load_attack_artifact(inputs["attack"])
         report = verify_attack(clean, split, attack)
         save_json(report, run_dir / "attack_verification.json")
+        for warning in report.get("warnings", []):
+            print(f"Attack verification warning: {warning}", file=sys.stderr)
         if not report["ok"]:
             raise ValueError("Attack verification failed: " + "; ".join(report["issues"]))
     config = build_model_config(spec.model.name, spec.model.config)

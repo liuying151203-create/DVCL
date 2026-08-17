@@ -25,3 +25,20 @@ def test_baseline_suite_size():
         ROOT / "configs" / "protocols" / "baseline_main.yaml"
     )
     assert len(list(RUN_SUITE.commands(baseline, "python", ROOT))) == 220
+
+
+def test_attack_path_pattern_is_expanded():
+    config = {
+        "protocol": "pilot",
+        "datasets": ["dblp"],
+        "models": [{"name": "han", "backend": "native"}],
+        "attacks": [{
+            "name": "heteprbcd",
+            "rates": [5],
+            "path_pattern": "outputs/pilots/{dataset}/{attack}/rate_{rate}/attack.pt",
+        }],
+        "seeds": {"split": [1], "attack": [1], "train": [1]},
+    }
+    command = next(RUN_SUITE.commands(config, "python", ROOT))
+    index = command.index("--attack-path")
+    assert command[index + 1] == "outputs/pilots/dblp/heteprbcd/rate_5/attack.pt"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
@@ -61,6 +61,7 @@ class AttackArtifact:
     stats: Dict[str, Any]
     source: str
     source_sha256: Optional[str] = None
+    provenance: Dict[str, Any] = field(default_factory=dict)
 
 
 def save_clean_artifact(value: CleanGraphArtifact, path: Path) -> None:
@@ -207,6 +208,7 @@ def attack_from_object(value: Any) -> AttackArtifact:
         stats=dict(_get(value, "stats", {})),
         source=str(_get(value, "source", "legacy_artifact")),
         source_sha256=_get(value, "source_sha256"),
+        provenance=dict(_get(value, "provenance", {})),
     )
 
 
@@ -249,6 +251,7 @@ def _metadata(kind: str, value: Any) -> Dict[str, Any]:
             "target_nodes": None if value.target_nodes is None else int(value.target_nodes.numel()),
             "source": value.source,
             "source_sha256": value.source_sha256,
+            "provenance": value.provenance,
             "stats": value.stats,
         })
     return base

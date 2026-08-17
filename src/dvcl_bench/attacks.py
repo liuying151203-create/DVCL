@@ -54,6 +54,7 @@ def import_prbcd_like_attack(
     source_file = Path(source_file)
     data = _torch_load(source_file)
     validate_attack_context(clean, split, data)
+    provenance = dict(getattr(data, "attack_metadata", {}) or {})
     imported = pyg_attack_to_adjs(data)
     perturbed = {name: value.copy() for name, value in clean.hete_adjs.items()}
     for etype, value in imported.items():
@@ -87,6 +88,7 @@ def import_prbcd_like_attack(
         None,
         str(source_file.resolve()),
         file_sha256(source_file),
+        provenance,
     )
 
 
@@ -127,6 +129,7 @@ def build_attack_artifact(
     target_nodes: Optional[torch.Tensor],
     source: str,
     source_sha256: Optional[str] = None,
+    provenance: Optional[Mapping[str, object]] = None,
 ) -> AttackArtifact:
     normalized = {name: _binary(value) for name, value in perturbed.items()}
     stats, added, deleted = perturbation_diff(clean.hete_adjs, normalized)
@@ -145,6 +148,7 @@ def build_attack_artifact(
         stats=stats,
         source=source,
         source_sha256=source_sha256,
+        provenance=dict(provenance or {}),
     )
 
 
@@ -248,7 +252,9 @@ def verify_attack(
             mismatch.eliminate_zeros()
             if mismatch.nnz:
                 issues.append(f"reverse edge mismatch: {etype}/{reverse}")
-    recomputed, _, _ = perturbation_diff(clean.hete_adjs, attack.perturbed_hete_adjs)
+    recomputed, added_edges, deleted_edges = perturbation_diff(
+        clean.hete_adjs, attack.perturbed_hete_adjs
+    )
     for etype, value in recomputed.items():
         claimed = attack.stats.get(etype)
         if etype == "_global" and claimed is None:
@@ -269,7 +275,91 @@ def verify_attack(
             issues.append("target node index out of range")
         if target.numel() and not bool(split.test_mask[target].all()):
             issues.append("target nodes are not all in the test split")
-    return {"ok": not issues, "issues": issues, "stats": recomputed, "budget": budget}
+    split_stats = split_perturbation_stats(clean, split, added_edges, deleted_edges)
+    warnings = _split_concentration_warnings(split_stats, attack.target_nodes)
+    return {
+        "ok": not issues,
+        "issues": issues,
+        "warnings": warnings,
+        "stats": recomputed,
+        "budget": budget,
+        "split_perturbation": split_stats,
+    }
+
+
+def split_perturbation_stats(clean, split, added_edges, deleted_edges):
+    masks = {
+        "train": split.train_mask.detach().cpu().numpy().astype(bool),
+        "val": split.val_mask.detach().cpu().numpy().astype(bool),
+        "test": split.test_mask.detach().cpu().numpy().astype(bool),
+    }
+    num_nodes = len(clean.labels)
+    global_add = np.zeros(num_nodes, dtype=np.int64)
+    global_delete = np.zeros(num_nodes, dtype=np.int64)
+    relations = {}
+    processed = set()
+    for source_type, relation, target_type in clean.canonical_etypes:
+        reverse = relation[::-1]
+        pair = tuple(sorted((relation, reverse)))
+        if pair in processed or clean.predict_ntype not in {source_type, target_type}:
+            continue
+        processed.add(pair)
+        added = added_edges.get(relation)
+        deleted = deleted_edges.get(relation)
+        if added is None or deleted is None:
+            continue
+        if target_type == clean.predict_ntype:
+            added = added.T.tocsr()
+            deleted = deleted.T.tocsr()
+        if added.shape[0] != num_nodes:
+            continue
+        additions = np.asarray(added.sum(axis=1)).reshape(-1).astype(np.int64)
+        deletions = np.asarray(deleted.sum(axis=1)).reshape(-1).astype(np.int64)
+        global_add += additions
+        global_delete += deletions
+        relations[relation] = _split_change_summary(additions, deletions, masks)
+    return {
+        "predict_ntype": clean.predict_ntype,
+        "relations": relations,
+        "_global": _split_change_summary(global_add, global_delete, masks),
+    }
+
+
+def _split_change_summary(additions, deletions, masks):
+    changes = additions + deletions
+    total_changes = int(changes.sum())
+    num_nodes = len(changes)
+    result = {"total_changes": total_changes}
+    for name, mask in masks.items():
+        split_changes = int(changes[mask].sum())
+        node_share = float(mask.sum() / max(num_nodes, 1))
+        change_share = float(split_changes / max(total_changes, 1))
+        result[name] = {
+            "nodes": int(mask.sum()),
+            "touched_nodes": int(np.count_nonzero(changes[mask])),
+            "touched_fraction": float(np.count_nonzero(changes[mask]) / max(mask.sum(), 1)),
+            "n_add": int(additions[mask].sum()),
+            "n_del": int(deletions[mask].sum()),
+            "changes": split_changes,
+            "changes_per_node": float(split_changes / max(mask.sum(), 1)),
+            "node_share": node_share,
+            "change_share": change_share,
+            "enrichment": float(change_share / max(node_share, np.finfo(float).eps)),
+        }
+    return result
+
+
+def _split_concentration_warnings(split_stats, target_nodes):
+    if target_nodes is not None:
+        return []
+    global_stats = split_stats["_global"]
+    train = global_stats["train"]
+    if global_stats["total_changes"] < 10 or train["enrichment"] < 5.0:
+        return []
+    return [
+        "global attack changes are highly concentrated on the training split: "
+        f"change_share={train['change_share']:.4f}, enrichment={train['enrichment']:.2f}x"
+    ]
 
 
 def _global_perturbation_stats(clean_adjs, relation_stats):
