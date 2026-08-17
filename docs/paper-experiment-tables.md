@@ -6,6 +6,9 @@
 ± 样本标准差，单位为百分数。Accuracy 与
 Micro-F1 数值相同，因此统一记为 `Accuracy / Micro-F1`。
 
+> 协议审计状态：表中 clean 结果有效，PRBCD/HetePRBCD 结果暂定；修正后的攻击
+> artifact 和重跑结果完成前，不应直接作为最终论文数字。
+
 ## 1. 主实验
 
 

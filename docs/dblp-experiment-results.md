@@ -1,5 +1,8 @@
 # DBLP 实验结果
 
+> 协议审计状态：clean 结果有效；PRBCD/HetePRBCD 结果暂定，需使用显式开启
+> semantic constraints、且 HetePRBCD 同时开启 biased sampling 的新 artifact 重跑。
+
 ## 1. 实验设置
 
 当前结果为 DBLP 上的全局结构 poisoning 实验，包括 clean、PRBCD 和

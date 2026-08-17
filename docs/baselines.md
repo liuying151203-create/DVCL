@@ -1,5 +1,8 @@
 # 统一协议基线
 
+> 协议审计状态：clean 结果有效；PRBCD/HetePRBCD 结果暂定，等待按论文约束重新生成
+> 攻击 artifact 后复跑。
+
 ## 已接入模型
 
 首批原生基线为 HAN 和 HeteroSAGE。两者与 HSeCo、DVCL 共用 clean、split、
@@ -39,8 +42,45 @@ manifest 完整。
 
 ## 实验结果
 
-下表先在每个训练种子内对攻击条件取平均，再计算 5 个训练种子间的均值和样本
-标准差，单位为百分数。Attack Average 包含全部 10 个攻击条件，不包含 clean。
+结果均为 5 个训练种子的均值 ± 样本标准差，单位为百分数，统一记为
+`Accuracy / Micro-F1`。
+
+### ACM
+
+| Attack | Rate | HAN | HeteroSAGE |
+|---|---:|---:|---:|
+| Clean | — | **91.16 ± 0.28** | 88.95 ± 2.64 |
+| PRBCD | 5% | **90.15 ± 1.42** | 88.41 ± 1.55 |
+| PRBCD | 10% | **88.23 ± 1.14** | 88.17 ± 1.49 |
+| PRBCD | 15% | 87.43 ± 0.41 | **87.96 ± 1.09** |
+| PRBCD | 20% | **86.82 ± 0.66** | 86.60 ± 2.21 |
+| PRBCD | 25% | 86.59 ± 1.14 | **86.60 ± 2.36** |
+| HetePRBCD | 5% | **90.20 ± 0.94** | 87.72 ± 1.60 |
+| HetePRBCD | 10% | **89.74 ± 1.06** | 88.15 ± 2.11 |
+| HetePRBCD | 15% | 87.38 ± 1.80 | **87.58 ± 1.41** |
+| HetePRBCD | 20% | 87.03 ± 2.50 | **87.52 ± 1.64** |
+| HetePRBCD | 25% | 85.89 ± 2.97 | **86.76 ± 1.10** |
+
+### DBLP
+
+| Attack | Rate | HAN | HeteroSAGE |
+|---|---:|---:|---:|
+| Clean | — | **92.84 ± 0.31** | 80.49 ± 0.38 |
+| PRBCD | 5% | **90.88 ± 0.87** | 75.93 ± 0.55 |
+| PRBCD | 10% | **90.94 ± 0.78** | 74.49 ± 1.28 |
+| PRBCD | 15% | **91.78 ± 0.34** | 74.81 ± 1.32 |
+| PRBCD | 20% | **90.96 ± 0.79** | 75.51 ± 1.26 |
+| PRBCD | 25% | **90.40 ± 0.35** | 74.19 ± 1.19 |
+| HetePRBCD | 5% | 27.11 ± 0.01 | **62.54 ± 5.47** |
+| HetePRBCD | 10% | 27.10 ± 0.00 | **62.79 ± 4.84** |
+| HetePRBCD | 15% | 27.10 ± 0.00 | **56.37 ± 6.15** |
+| HetePRBCD | 20% | 27.11 ± 0.01 | **52.33 ± 8.22** |
+| HetePRBCD | 25% | 27.87 ± 0.37 | **48.49 ± 6.62** |
+
+### 攻击平均
+
+先在每个训练种子内对攻击条件取平均，再计算种子间的均值和样本标准差。
+Attack Average 包含全部 10 个攻击条件，不包含 clean。
 
 | Dataset | Condition | HAN | HeteroSAGE |
 |---|---|---:|---:|
@@ -62,13 +102,21 @@ manifest 完整。
 
 ## 结果分析
 
-1. ACM 上 HAN 与 HeteroSAGE 的 Attack Average 分别为 87.95 和 87.55，DVCL
-   为 88.16，DVCL 在整体攻击平均上保持最高结果。
-2. DBLP PRBCD 下 HAN 达到 90.99，但在 HetePRBCD 下下降到 27.26，说明该模型
+1. 攻击链路有效。ACM 25% 条件均通过 4358/4358 的唯一边预算检查；计入反向
+   关系后实际修改 8716 条有向边。HAN 第一元路径图相对 clean 的 Jaccard 在
+   PRBCD/HetePRBCD 下分别降至 0.643/0.657，模型 diagnostics 与攻击图一致。
+2. ACM 上 HAN 在 PRBCD 25% 和 HetePRBCD 25% 下相对 clean 分别下降 4.57 和
+   5.27 个百分点；HeteroSAGE 分别下降 2.35 和 2.19 个百分点，并非没有下降。
+3. 两个模型没有显式净化模块，但仍保留节点特征、自环或根节点变换。ACM 的
+   固定特征视图单独即可达到 86.47，因此纯拓扑 poisoning 不必导致分类崩溃。
+   当前攻击还是 `adaptive=false` 的全局迁移攻击，模型会在扰动图上重新训练。
+4. ACM Attack Average 上 HAN、HeteroSAGE 和 DVCL 分别为 87.95、87.55 和
+   88.16，DVCL 的平均优势较小，不能据此宣称 ACM 上存在大幅鲁棒性提升。
+5. DBLP PRBCD 下 HAN 达到 90.99，但在 HetePRBCD 下下降到 27.26，说明该模型
    对不同异构攻击族的表现差异显著，需结合关系级边变化进一步诊断。
-3. HeteroSAGE 在 DBLP HetePRBCD 下优于 HAN，但 56.51 仍明显低于 HSeCo 的
+6. HeteroSAGE 在 DBLP HetePRBCD 下优于 HAN，但 56.51 仍明显低于 HSeCo 的
    76.30 和 DVCL 的 82.85。
-4. DBLP Attack Average 上，DVCL 达到 85.88，分别比 HAN 和 HeteroSAGE 高
+7. DBLP Attack Average 上，DVCL 达到 85.88，分别比 HAN 和 HeteroSAGE 高
    26.76 和 20.13 个百分点。
 
 ## 后续鲁棒基线
