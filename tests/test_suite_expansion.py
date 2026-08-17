@@ -34,6 +34,16 @@ def test_corrected_dblp_poisoning_suite_size():
     assert len(list(RUN_SUITE.commands(config, "python", ROOT))) == 220
 
 
+def test_model_selection_partitions_formal_suite():
+    config = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" / "dblp_poisoning_main_v1.yaml"
+    )
+    selected = RUN_SUITE.select_models(config, ["han"])
+    commands = list(RUN_SUITE.commands(selected, "python", ROOT))
+    assert len(commands) == 55
+    assert all(command[command.index("--model") + 1] == "han" for command in commands)
+
+
 def test_attack_path_pattern_is_expanded():
     config = {
         "protocol": "pilot",

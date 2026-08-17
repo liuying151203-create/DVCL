@@ -18,11 +18,28 @@ def parse_args():
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--continue-on-error", action="store_true")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--model", action="append", dest="models")
+    parser.add_argument("--device")
     return parser.parse_args()
 
 
 def load_config(path: Path):
     return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def select_models(config, selected):
+    if not selected:
+        return config
+    if "models" not in config:
+        raise ValueError("Model selection is only supported for model-list suites")
+    selected = set(selected)
+    available = {model["name"] for model in config["models"]}
+    missing = selected - available
+    if missing:
+        raise ValueError(f"Unknown selected models: {sorted(missing)}")
+    result = dict(config)
+    result["models"] = [model for model in config["models"] if model["name"] in selected]
+    return result
 
 
 def commands(config, python_bin, base_dir=ROOT):
@@ -123,6 +140,9 @@ def main() -> int:
     if not path.is_absolute():
         path = (ROOT / path).resolve()
     config = load_config(path)
+    config = select_models(config, args.models)
+    if args.device:
+        config = {**config, "device": args.device}
     failures = 0
     for command in commands(config, args.python_bin, ROOT):
         if args.dry_run:
