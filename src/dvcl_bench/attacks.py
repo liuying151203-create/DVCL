@@ -392,10 +392,12 @@ def _budget_report(attack_rate, global_stats):
     expected_changes = int(clean_edges * _rate_fraction(float(attack_rate)))
     actual_changes = int(global_stats["n_add"] + global_stats["n_del"])
     tolerance = max(1, int(np.ceil(expected_changes * 0.02)))
+    shortfall = expected_changes - actual_changes
     return {
-        "ok": abs(actual_changes - expected_changes) <= tolerance,
+        "ok": 0 <= shortfall <= tolerance,
         "expected_changes": expected_changes,
         "actual_changes": actual_changes,
+        "shortfall": shortfall,
         "tolerance": tolerance,
         "expected_rate": _rate_fraction(float(attack_rate)),
         "actual_rate": float(global_stats["actual_rate"]),

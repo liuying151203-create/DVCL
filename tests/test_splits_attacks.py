@@ -8,6 +8,7 @@ sp = pytest.importorskip("scipy.sparse")
 
 from dvcl_bench.artifacts import CleanGraphArtifact
 from dvcl_bench.attacks import (
+    _budget_report,
     build_attack_artifact,
     generate_rnd_attack,
     validate_attack_context,
@@ -95,6 +96,22 @@ def test_attack_verification_warns_about_training_split_concentration():
     assert train_stats["change_share"] == pytest.approx(1.0)
     assert train_stats["enrichment"] == pytest.approx(10.0)
     assert report["warnings"]
+
+
+def test_budget_report_allows_small_underuse_but_rejects_overuse():
+    under_budget = _budget_report(
+        10, {"clean_edges": 1000, "n_add": 99, "n_del": 0, "actual_rate": 0.099}
+    )
+    over_budget = _budget_report(
+        10, {"clean_edges": 1000, "n_add": 101, "n_del": 0, "actual_rate": 0.101}
+    )
+    excessive_shortfall = _budget_report(
+        10, {"clean_edges": 1000, "n_add": 97, "n_del": 0, "actual_rate": 0.097}
+    )
+    assert under_budget["ok"]
+    assert under_budget["shortfall"] == 1
+    assert not over_budget["ok"]
+    assert not excessive_shortfall["ok"]
 
 
 def test_attack_context_rejects_a_different_split():
