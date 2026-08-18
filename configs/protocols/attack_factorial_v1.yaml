@@ -1,0 +1,45 @@
+protocol: attack_factorial_v1
+device: cuda:0
+
+datasets:
+  - acm
+  - dblp
+
+models:
+  - name: han
+    backend: native
+    config_path: configs/models/han.yaml
+  - name: heterosage
+    backend: native
+    config_path: configs/models/heterosage.yaml
+  - name: hseco
+    backend: native
+    config_path: configs/models/hseco_native.yaml
+  - name: dvcl
+    backend: native
+    config_path: configs/models/dvcl.yaml
+
+split_name_pattern: paper_seed_{seed}
+
+attacks:
+  - name: prbcd
+    variant: unconstrained
+    rates: [5, 15, 25]
+    threat_model: poisoning
+    scope: global
+    path_pattern: data/attack_diagnostics/{dataset}/prbcd_unconstrained/rate_{rate}/seed_{seed}/attack.pt
+  - name: heteprbcd
+    variant: unbiased
+    rates: [5, 15, 25]
+    threat_model: poisoning
+    scope: global
+    path_pattern: data/attack_diagnostics/{dataset}/heteprbcd_unbiased/rate_{rate}/seed_{seed}/attack.pt
+
+seeds:
+  split: [1]
+  attack: [1]
+  train: [1, 2, 3, 4, 5]
+
+training:
+  epochs: 200
+  patience: 100

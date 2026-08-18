@@ -11,6 +11,8 @@ from dvcl_bench.attacks import (
     _budget_report,
     build_attack_artifact,
     generate_rnd_attack,
+    import_hg_baseline_attack,
+    apply_target_change,
     validate_attack_context,
     verify_attack,
 )
@@ -134,6 +136,31 @@ def test_attack_context_rejects_a_different_split():
 
     with pytest.raises(ValueError, match="train_mask"):
         validate_attack_context(clean, split, Source())
+
+
+def test_imports_and_verifies_target_evasion(tmp_path):
+    clean = clean_fixture()
+    split = build_split_artifact(clean, 1, "random", 0.5, 0.25, 0.25)
+    target = int(split.test_idx[0])
+    existing = int(clean.hete_adjs["pa"][target].indices[0])
+    missing = next(
+        column for column in range(clean.hete_adjs["pa"].shape[1])
+        if clean.hete_adjs["pa"][target, column] == 0
+    )
+    source = tmp_path / "hg.pkl"
+    with source.open("wb") as stream:
+        pickle.dump([(target, None, [(target, existing)], [(target, missing)])], stream)
+    attack = import_hg_baseline_attack(
+        clean, split, 3, 1, source, target_nodes=[target]
+    )
+    report = verify_attack(clean, split, attack)
+    assert report["ok"]
+    assert attack.threat_model == "evasion"
+    assert attack.scope == "target"
+    attacked = apply_target_change(clean, attack.target_changes[0])
+    assert attacked["pa"][target, existing] == 0
+    assert attacked["pa"][target, missing] == 1
+    assert (attacked["pa"].T != attacked["ap"]).nnz == 0
 
 
 def test_imports_legacy_hseco_split_list(tmp_path):

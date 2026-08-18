@@ -31,6 +31,8 @@ def parse_args():
     parser.add_argument("--rate", type=float, default=0)
     parser.add_argument("--threat-model", default="poisoning", choices=["poisoning", "evasion"])
     parser.add_argument("--scope", default="global", choices=["global", "target"])
+    parser.add_argument("--adaptive", action="store_true")
+    parser.add_argument("--attack-variant", default="default")
     parser.add_argument("--split-name", default="paper_seed_1")
     parser.add_argument("--split-seed", type=int, default=1)
     parser.add_argument("--attack-seed", type=int, default=1)
@@ -52,7 +54,10 @@ def build_spec(args, extra):
         dataset=args.dataset.lower(),
         split_name=args.split_name,
         seeds=SeedSpec(args.split_seed, args.attack_seed, args.train_seed),
-        attack=AttackSpec(args.attack.lower(), args.rate, args.threat_model, args.scope),
+        attack=AttackSpec(
+            args.attack.lower(), args.rate, args.threat_model, args.scope,
+            args.adaptive, args.attack_variant
+        ),
         model=ModelSpec(args.model.lower(), args.backend, json.loads(args.model_config_json)),
         device=args.device,
         epochs=args.epochs,
@@ -153,9 +158,24 @@ def run_native(spec, inputs, run_dir):
 
     clean = load_clean_artifact(inputs["clean"])
     split = load_split_artifact(inputs["split"])
+    if spec.attack.threat_model == "evasion" and spec.attack.scope != "target":
+        raise ValueError(
+            "Native global evasion is not implemented; use HG Baseline target evasion"
+        )
     attack = None
     if "attack" in inputs:
         attack = load_attack_artifact(inputs["attack"])
+        artifact_semantics = (
+            attack.threat_model, attack.scope, bool(attack.adaptive)
+        )
+        requested_semantics = (
+            spec.attack.threat_model, spec.attack.scope, bool(spec.attack.adaptive)
+        )
+        if artifact_semantics != requested_semantics:
+            raise ValueError(
+                "Attack artifact semantics do not match the experiment spec: "
+                f"artifact={artifact_semantics}, requested={requested_semantics}"
+            )
         report = verify_attack(clean, split, attack)
         save_json(report, run_dir / "attack_verification.json")
         for warning in report.get("warnings", []):
@@ -182,6 +202,7 @@ def run_native(spec, inputs, run_dir):
         "model": spec.model.name,
         "variant": spec.model.config.get("variant", "default"),
         "attack": spec.attack.name,
+        "attack_variant": spec.attack.variant,
         "rate": spec.attack.rate,
         "split_seed": spec.seeds.split,
         "attack_seed": spec.seeds.attack,

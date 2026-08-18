@@ -18,3 +18,12 @@ def test_seeds_are_independent_in_mapping():
         }
     )
     assert (spec.seeds.split, spec.seeds.attack, spec.seeds.train) == (1, 2, 3)
+
+
+def test_hg_baseline_requires_target_evasion():
+    with pytest.raises(ValueError, match="hg_baseline"):
+        AttackSpec(name="hg_baseline", rate=3)
+    value = AttackSpec(
+        name="hg_baseline", rate=3, threat_model="evasion", scope="target"
+    )
+    assert value.threat_model == "evasion"

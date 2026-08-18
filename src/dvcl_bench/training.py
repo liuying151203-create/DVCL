@@ -93,6 +93,49 @@ class HeteroSAGETrainConfig:
 
 
 @dataclass
+class HeteroGuardTrainConfig:
+    hidden_dim: int = 64
+    num_layers: int = 2
+    dropout: float = 0.5
+    learning_rate: float = 0.01
+    weight_decay: float = 0.001
+    attention_threshold: float = 0.1
+    gated_attention: bool = True
+
+
+@dataclass
+class RoHeTrainConfig:
+    hidden_dim: int = 64
+    heads: int = 8
+    dropout: float = 0.3
+    learning_rate: float = 0.005
+    weight_decay: float = 0.001
+    top_t: Optional[List[int]] = None
+
+    def freeze_for_dataset(self, dataset: str) -> "RoHeTrainConfig":
+        value = copy.deepcopy(self)
+        defaults = {
+            "acm": [2, 5],
+            "dblp": [5, 30, 5],
+            "aminer": [2, 5],
+        }
+        value.top_t = value.top_t or defaults[dataset]
+        return value
+
+
+@dataclass
+class FastRoHGCNTrainConfig:
+    projection_dim: int = 64
+    hidden_dim: int = 64
+    layers: int = 2
+    dropout: float = 0.5
+    learning_rate: float = 0.005
+    weight_decay: float = 0.0
+    topk_similarity: int = 5
+    self_loop_weight: float = 0.065
+
+
+@dataclass
 class TrainingResult:
     metrics: Dict[str, float]
     history: List[Dict[str, float]]

@@ -3,9 +3,11 @@ from typing import Any, Dict, Mapping
 
 
 SUPPORTED_DATASETS = {"acm", "dblp", "aminer", "imdb"}
-SUPPORTED_ATTACKS = {"clean", "rnd", "prbcd", "heteprbcd"}
+SUPPORTED_ATTACKS = {"clean", "rnd", "prbcd", "heteprbcd", "hg_baseline"}
 LEGACY_MODELS = {"hseco", "dvcl"}
-NATIVE_MODELS = {"hseco", "dvcl", "han", "heterosage"}
+NATIVE_MODELS = {
+    "hseco", "dvcl", "han", "heterosage", "heteroguard", "rohe", "fastrohgcn"
+}
 
 
 @dataclass(frozen=True)
@@ -27,6 +29,7 @@ class AttackSpec:
     threat_model: str = "poisoning"
     scope: str = "global"
     adaptive: bool = False
+    variant: str = "default"
 
     def __post_init__(self) -> None:
         if self.name not in SUPPORTED_ATTACKS:
@@ -39,6 +42,12 @@ class AttackSpec:
             raise ValueError(f"Unsupported threat model: {self.threat_model}")
         if self.scope not in {"global", "target"}:
             raise ValueError(f"Unsupported attack scope: {self.scope}")
+        if self.scope == "target" and self.threat_model != "evasion":
+            raise ValueError("target attacks must use evasion semantics")
+        if self.name == "hg_baseline" and (
+            self.threat_model != "evasion" or self.scope != "target"
+        ):
+            raise ValueError("hg_baseline requires target evasion semantics")
 
 
 @dataclass(frozen=True)
@@ -97,6 +106,7 @@ class ExperimentSpec:
                 threat_model=str(attack.get("threat_model", "poisoning")),
                 scope=str(attack.get("scope", "global")),
                 adaptive=bool(attack.get("adaptive", False)),
+                variant=str(attack.get("variant", "default")),
             ),
             model=ModelSpec(
                 name=str(model["name"]).lower(),

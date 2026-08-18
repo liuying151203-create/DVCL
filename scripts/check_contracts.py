@@ -47,6 +47,13 @@ def main() -> int:
     assert "split_seed_1/attack_seed_1/train_seed_3" in native_path
     ModelSpec(name="han", backend="native")
     ModelSpec(name="heterosage", backend="native")
+    ModelSpec(name="rohe", backend="native")
+    ModelSpec(name="heteroguard", backend="native")
+    ModelSpec(name="fastrohgcn", backend="native")
+    target = AttackSpec(
+        name="hg_baseline", rate=3, threat_model="evasion", scope="target"
+    )
+    assert target.scope == "target"
     print("DVCL experiment contracts: passed")
     return 0
 

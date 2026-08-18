@@ -26,6 +26,7 @@ def load_rows(run_root: Path):
             key: payload.get(key)
             for key in (
                 "protocol", "dataset", "model", "variant", "attack", "rate",
+                "attack_variant",
                 "split_seed", "attack_seed", "train_seed", "best_epoch", "stopped_epoch",
             )
         }
@@ -37,7 +38,7 @@ def load_rows(run_root: Path):
 
 def aggregate(rows):
     keys = (
-        "protocol", "dataset", "model", "variant", "attack", "rate",
+        "protocol", "dataset", "model", "variant", "attack", "attack_variant", "rate",
         "split_seed", "attack_seed",
     )
     groups = defaultdict(list)
@@ -63,6 +64,7 @@ def attack_averages(rows):
             continue
         key = (
             row["protocol"], row["dataset"], row["model"], row["variant"],
+            row["attack_variant"],
             row["split_seed"], row["attack_seed"], row["train_seed"],
         )
         per_seed[key].append(row)
@@ -73,7 +75,10 @@ def attack_averages(rows):
         grouped[key[:-1]].append(seed_row)
         condition_counts[key[:-1]].append(len(values))
     result = []
-    names = ("protocol", "dataset", "model", "variant", "split_seed", "attack_seed")
+    names = (
+        "protocol", "dataset", "model", "variant", "attack_variant",
+        "split_seed", "attack_seed",
+    )
     for key, values in sorted(grouped.items()):
         row = dict(zip(names, key))
         row["train_seed_runs"] = len(values)

@@ -12,22 +12,33 @@ from dvcl_bench.artifacts import (
     load_split_artifact,
     save_attack_artifact,
 )
-from dvcl_bench.attacks import generate_rnd_attack, import_prbcd_like_attack
+from dvcl_bench.attacks import (
+    generate_rnd_attack,
+    import_hg_baseline_attack,
+    import_prbcd_like_attack,
+)
 from dvcl_bench.paths import ExperimentLayout
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate or import an attack artifact.")
-    parser.add_argument("--dataset", required=True, choices=["acm", "dblp"])
+    parser.add_argument("--dataset", required=True, choices=["acm", "dblp", "aminer"])
     parser.add_argument("--data-root", default=str(ROOT / "data"))
     parser.add_argument("--clean-path")
     parser.add_argument("--split", default="paper_seed_1")
     parser.add_argument("--split-path")
-    parser.add_argument("--attack", required=True, choices=["rnd", "prbcd", "heteprbcd"])
+    parser.add_argument(
+        "--attack", required=True,
+        choices=["rnd", "prbcd", "heteprbcd", "hg_baseline"],
+    )
     parser.add_argument("--attack-rate", type=float, required=True)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--mode", default="generate", choices=["generate", "import"])
     parser.add_argument("--source-file")
+    parser.add_argument(
+        "--target-files", nargs="*", default=[],
+        help="Optional pickle files containing the frozen HG Baseline target nodes.",
+    )
     parser.add_argument("--output")
     return parser.parse_args()
 
@@ -56,6 +67,13 @@ def main() -> int:
         artifact = import_prbcd_like_attack(
             clean, split, args.attack, args.attack_rate, args.seed, Path(args.source_file)
         )
+    elif args.attack == "hg_baseline" and args.mode == "import":
+        if not args.source_file:
+            raise ValueError("--source-file is required when importing HG Baseline")
+        target_nodes = _load_target_nodes(args.target_files) if args.target_files else None
+        artifact = import_hg_baseline_attack(
+            clean, split, args.attack_rate, args.seed, Path(args.source_file), target_nodes
+        )
     else:
         raise ValueError(f"Unsupported attack/mode: {args.attack}/{args.mode}")
     output = Path(args.output) if args.output else (
@@ -68,6 +86,17 @@ def main() -> int:
     print(f"Saved attack artifact: {output}")
     print(f"Stats: {artifact.stats}")
     return 0
+
+
+def _load_target_nodes(paths):
+    import pickle
+
+    targets = []
+    for path in paths:
+        with Path(path).open("rb") as stream:
+            values = pickle.load(stream)
+        targets.extend(int(value) for value in values)
+    return sorted(set(targets))
 
 
 if __name__ == "__main__":

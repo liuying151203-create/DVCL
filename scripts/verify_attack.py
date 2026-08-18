@@ -15,7 +15,7 @@ from dvcl_bench.paths import ExperimentLayout
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Verify an attack artifact.")
-    parser.add_argument("--dataset", required=True, choices=["acm", "dblp"])
+    parser.add_argument("--dataset", required=True, choices=["acm", "dblp", "aminer"])
     parser.add_argument("--data-root", default=str(ROOT / "data"))
     parser.add_argument("--clean-path")
     parser.add_argument("--split", default="paper_seed_1")

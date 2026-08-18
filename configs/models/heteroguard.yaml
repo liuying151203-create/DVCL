@@ -1,0 +1,8 @@
+config:
+  hidden_dim: 64
+  num_layers: 2
+  dropout: 0.5
+  learning_rate: 0.01
+  weight_decay: 0.001
+  attention_threshold: 0.1
+  gated_attention: true

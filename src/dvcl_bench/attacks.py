@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import pickle
 from pathlib import Path
-from typing import Dict, Mapping, Optional
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
 import numpy as np
 import scipy.sparse as sp
@@ -130,6 +131,10 @@ def build_attack_artifact(
     source: str,
     source_sha256: Optional[str] = None,
     provenance: Optional[Mapping[str, object]] = None,
+    threat_model: str = "poisoning",
+    scope: str = "global",
+    adaptive: bool = False,
+    target_changes: Optional[Sequence[Mapping[str, object]]] = None,
 ) -> AttackArtifact:
     normalized = {name: _binary(value) for name, value in perturbed.items()}
     stats, added, deleted = perturbation_diff(clean.hete_adjs, normalized)
@@ -149,7 +154,102 @@ def build_attack_artifact(
         source=source,
         source_sha256=source_sha256,
         provenance=dict(provenance or {}),
+        threat_model=threat_model,
+        scope=scope,
+        adaptive=adaptive,
+        target_changes=[dict(value) for value in (target_changes or [])],
     )
+
+
+TARGET_ATTACK_SPECS = {
+    "acm": {"relation": "pa", "reverse": "ap", "target_position": 0},
+    "dblp": {"relation": "pa", "reverse": "ap", "target_position": 1},
+    "aminer": {"relation": "pr", "reverse": "rp", "target_position": 0},
+}
+
+
+def import_hg_baseline_attack(
+    clean: CleanGraphArtifact,
+    split: SplitArtifact,
+    attack_rate: float,
+    seed: int,
+    source_file: Path,
+    target_nodes: Optional[Iterable[int]] = None,
+) -> AttackArtifact:
+    if float(attack_rate) not in {1.0, 3.0, 5.0}:
+        raise ValueError("HG Baseline requires a per-target budget in {1, 3, 5}")
+    try:
+        spec = TARGET_ATTACK_SPECS[clean.dataset]
+    except KeyError as exc:
+        raise ValueError(f"HG Baseline is not defined for {clean.dataset}") from exc
+    source_file = Path(source_file)
+    with source_file.open("rb") as stream:
+        raw_records = pickle.load(stream)
+    selected = None if target_nodes is None else {int(value) for value in target_nodes}
+    records: List[Dict[str, object]] = []
+    seen = set()
+    for raw in raw_records:
+        if not isinstance(raw, (tuple, list)) or len(raw) < 4:
+            raise ValueError(f"Invalid HG Baseline record: {raw!r}")
+        target = int(raw[0])
+        if target in seen or (selected is not None and target not in selected):
+            continue
+        seen.add(target)
+        records.append({
+            "target": target,
+            "relation": spec["relation"],
+            "reverse_relation": spec["reverse"],
+            "target_position": int(spec["target_position"]),
+            "deleted": _edge_pairs(raw[2]),
+            "added": _edge_pairs(raw[3]),
+        })
+    if selected is not None:
+        missing = selected - seen
+        if missing:
+            raise ValueError(f"HG Baseline source is missing {len(missing)} selected targets")
+    records.sort(key=lambda value: int(value["target"]))
+    targets = torch.tensor([int(value["target"]) for value in records], dtype=torch.long)
+    artifact = build_attack_artifact(
+        clean=clean,
+        split=split,
+        attack_name="hg_baseline",
+        attack_rate=attack_rate,
+        seed=seed,
+        perturbed=clean.hete_adjs,
+        target_nodes=targets,
+        source=str(source_file.resolve()),
+        source_sha256=file_sha256(source_file),
+        provenance={
+            "generator": "Atk_RoHe",
+            "budget_semantics": "maximum edge changes per target",
+            "relation": spec["relation"],
+        },
+        threat_model="evasion",
+        scope="target",
+        adaptive=False,
+        target_changes=records,
+    )
+    artifact.stats["_target"] = _target_attack_stats(records, attack_rate)
+    return artifact
+
+
+def apply_target_change(
+    clean: CleanGraphArtifact,
+    record: Mapping[str, object],
+) -> Dict[str, sp.csr_matrix]:
+    relation = str(record["relation"])
+    reverse = str(record["reverse_relation"])
+    if relation not in clean.hete_adjs or reverse not in clean.hete_adjs:
+        raise ValueError(f"Unknown target attack relation pair: {relation}/{reverse}")
+    values = {name: value.copy() for name, value in clean.hete_adjs.items()}
+    attacked = values[relation].tolil(copy=True)
+    for row, column in record.get("deleted", []):
+        attacked[int(row), int(column)] = 0
+    for row, column in record.get("added", []):
+        attacked[int(row), int(column)] = 1
+    values[relation] = _binary(attacked)
+    values[reverse] = values[relation].T.tocsr()
+    return values
 
 
 def random_flip(
@@ -223,6 +323,12 @@ def verify_attack(
     attack: AttackArtifact,
 ) -> Dict[str, object]:
     issues = []
+    if attack.threat_model not in {"poisoning", "evasion"}:
+        issues.append(f"unsupported artifact threat model: {attack.threat_model}")
+    if attack.scope not in {"global", "target"}:
+        issues.append(f"unsupported artifact scope: {attack.scope}")
+    if attack.scope == "target" and attack.threat_model != "evasion":
+        issues.append("target attack artifacts must use evasion semantics")
     if clean.dataset != attack.dataset or split.dataset != attack.dataset:
         issues.append("dataset mismatch between clean, split and attack")
     if clean.version != attack.clean_version:
@@ -275,6 +381,8 @@ def verify_attack(
             issues.append("target node index out of range")
         if target.numel() and not bool(split.test_mask[target].all()):
             issues.append("target nodes are not all in the test split")
+    if attack.scope == "target":
+        issues.extend(_verify_target_changes(clean, attack))
     split_stats = split_perturbation_stats(clean, split, added_edges, deleted_edges)
     warnings = _split_concentration_warnings(split_stats, attack.target_nodes)
     return {
@@ -284,6 +392,67 @@ def verify_attack(
         "stats": recomputed,
         "budget": budget,
         "split_perturbation": split_stats,
+    }
+
+
+def _verify_target_changes(
+    clean: CleanGraphArtifact,
+    attack: AttackArtifact,
+) -> List[str]:
+    issues = []
+    expected_targets = set(
+        [] if attack.target_nodes is None else attack.target_nodes.long().tolist()
+    )
+    record_targets = [int(record.get("target", -1)) for record in attack.target_changes]
+    if len(record_targets) != len(set(record_targets)):
+        issues.append("duplicate target attack records")
+    if set(record_targets) != expected_targets:
+        issues.append("target node list does not match target attack records")
+    budget = int(attack.attack_rate)
+    for record in attack.target_changes:
+        target = int(record.get("target", -1))
+        relation = str(record.get("relation", ""))
+        reverse = str(record.get("reverse_relation", ""))
+        position = int(record.get("target_position", -1))
+        if relation not in clean.hete_adjs or reverse not in clean.hete_adjs:
+            issues.append(f"target {target}: unknown relation pair {relation}/{reverse}")
+            continue
+        if position not in {0, 1}:
+            issues.append(f"target {target}: invalid target position {position}")
+            continue
+        changes = list(record.get("deleted", [])) + list(record.get("added", []))
+        if len(changes) > budget:
+            issues.append(f"target {target}: budget exceeded ({len(changes)} > {budget})")
+        adjacency = clean.hete_adjs[relation]
+        for kind in ("deleted", "added"):
+            for raw_edge in record.get(kind, []):
+                row, column = (int(raw_edge[0]), int(raw_edge[1]))
+                if row < 0 or column < 0 or row >= adjacency.shape[0] or column >= adjacency.shape[1]:
+                    issues.append(f"target {target}: {kind} edge out of range")
+                    continue
+                if (row, column)[position] != target:
+                    issues.append(f"target {target}: {kind} edge does not touch target")
+                exists = bool(adjacency[row, column])
+                if kind == "deleted" and not exists:
+                    issues.append(f"target {target}: deleted edge does not exist")
+                if kind == "added" and exists:
+                    issues.append(f"target {target}: added edge already exists")
+    return issues
+
+
+def _edge_pairs(values) -> List[List[int]]:
+    return [[int(edge[0]), int(edge[1])] for edge in values]
+
+
+def _target_attack_stats(records: Sequence[Mapping[str, object]], budget: float):
+    counts = [len(record.get("deleted", [])) + len(record.get("added", [])) for record in records]
+    return {
+        "targets": len(records),
+        "budget_per_target": int(budget),
+        "total_changes": int(sum(counts)),
+        "min_changes": int(min(counts, default=0)),
+        "max_changes": int(max(counts, default=0)),
+        "mean_changes": float(np.mean(counts)) if counts else 0.0,
     }
 
 

@@ -41,6 +41,12 @@ CANONICAL_ETYPES = {
         ("paper", "pt", "term"),
         ("term", "tp", "paper"),
     ],
+    "aminer": [
+        ("paper", "pa", "author"),
+        ("author", "ap", "paper"),
+        ("paper", "pr", "research"),
+        ("research", "rp", "paper"),
+    ],
 }
 
 
@@ -50,11 +56,11 @@ def build_clean_artifact(
     version: str = "v1",
 ) -> CleanGraphArtifact:
     dataset = dataset.lower()
-    loaders = {"acm": _load_acm, "dblp": _load_dblp}
+    loaders = {"acm": _load_acm, "dblp": _load_dblp, "aminer": _load_aminer}
     try:
         node_counts, adjs, features, labels, num_classes = loaders[dataset](Path(data_root))
     except KeyError as exc:
-        raise ValueError("Native dataset preparation currently supports ACM and DBLP") from exc
+        raise ValueError("Native dataset preparation supports ACM, DBLP and AMiner") from exc
     adjs = {name: _binary_csr(value) for name, value in adjs.items()}
     stats = graph_stats(node_counts, adjs, features, labels)
     return CleanGraphArtifact(
@@ -154,6 +160,41 @@ def _load_dblp(data_root: Path):
     )
     adjs = {"ap": ap, "pa": ap.T, "pc": pc, "cp": pc.T, "pt": pt, "tp": pt.T}
     return node_counts, adjs, features, labels, int(labels.max().item()) + 1
+
+
+def _load_aminer(data_root: Path):
+    candidates = [data_root / "aminer", data_root / "raw" / "aminer"]
+    directory = next(
+        (path for path in candidates if all(
+            (path / name).is_file()
+            for name in ("pa.npz", "pr.npz", "labels.npy", "pos.npz")
+        )),
+        None,
+    )
+    if directory is None:
+        expected = ", ".join(str(candidates[0] / name) for name in (
+            "pa.npz", "pr.npz", "labels.npy", "pos.npz"
+        ))
+        raise FileNotFoundError(f"AMiner raw files are missing: {expected}")
+    pa = sp.load_npz(directory / "pa.npz").tocsr()
+    pr = sp.load_npz(directory / "pr.npz").tocsr()
+    labels = torch.from_numpy(np.load(directory / "labels.npy", allow_pickle=False)).long()
+    positions = sp.load_npz(directory / "pos.npz").tocsr()
+    if pa.shape[0] != pr.shape[0] or pa.shape[0] != len(labels):
+        raise ValueError("AMiner paper dimensions disagree across relations and labels")
+    if positions.shape[0] != len(labels):
+        raise ValueError("AMiner position feature rows do not match labels")
+    if len(labels) != 6564:
+        raise ValueError(f"Expected the paper-protocol AMiner with 6564 papers, got {len(labels)}")
+    if int(labels.min()) < 0 or int(labels.max()) >= 4:
+        raise ValueError("AMiner labels must use four classes indexed from zero")
+    node_counts = {
+        "paper": int(pa.shape[0]),
+        "author": int(pa.shape[1]),
+        "research": int(pr.shape[1]),
+    }
+    adjs = {"pa": pa, "ap": pa.T, "pr": pr, "rp": pr.T}
+    return node_counts, adjs, torch.from_numpy(positions.toarray()).float(), labels, 4
 
 
 def _edge_index_to_csr(edge_index: torch.Tensor, shape: Tuple[int, int]) -> sp.csr_matrix:

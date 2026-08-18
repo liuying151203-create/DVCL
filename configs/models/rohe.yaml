@@ -1,0 +1,6 @@
+config:
+  hidden_dim: 64
+  heads: 8
+  dropout: 0.3
+  learning_rate: 0.005
+  weight_decay: 0.001

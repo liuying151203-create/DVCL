@@ -16,3 +16,23 @@ def test_run_path_contains_all_seed_dimensions():
     )
     value = str(layout.run_dir(spec)).replace("\\", "/")
     assert "split_seed_1/attack_seed_2/train_seed_3" in value
+
+
+def test_attack_variant_isolated_without_changing_default_paths():
+    layout = ExperimentLayout(Path("code"))
+    common = dict(
+        protocol="diagnostic",
+        dataset="acm",
+        split_name="paper_seed_1",
+        seeds=SeedSpec(split=1, attack=1, train=1),
+        model=ModelSpec(name="dvcl", backend="native"),
+    )
+    default = ExperimentSpec(
+        **common, attack=AttackSpec(name="prbcd", rate=5)
+    )
+    diagnostic = ExperimentSpec(
+        **common,
+        attack=AttackSpec(name="prbcd", rate=5, variant="unconstrained"),
+    )
+    assert "/prbcd/rate_5/" in str(layout.run_dir(default)).replace("\\", "/")
+    assert "/prbcd_unconstrained/rate_5/" in str(layout.run_dir(diagnostic)).replace("\\", "/")

@@ -5,12 +5,23 @@ from __future__ import annotations
 from dataclasses import fields
 from typing import Any, Dict
 
-from .adapters import train_dvcl, train_han, train_hseco, train_heterosage
+from .adapters import (
+    train_dvcl,
+    train_han,
+    train_hseco,
+    train_heteroguard,
+    train_heterosage,
+    train_rohe,
+    train_fastrohgcn,
+)
 from .training import (
     DVCLTrainConfig,
     HANTrainConfig,
     HSeCoTrainConfig,
     HeteroSAGETrainConfig,
+    HeteroGuardTrainConfig,
+    RoHeTrainConfig,
+    FastRoHGCNTrainConfig,
 )
 
 
@@ -19,6 +30,9 @@ NATIVE_MODELS = {
     "dvcl": (DVCLTrainConfig, train_dvcl),
     "han": (HANTrainConfig, train_han),
     "heterosage": (HeteroSAGETrainConfig, train_heterosage),
+    "heteroguard": (HeteroGuardTrainConfig, train_heteroguard),
+    "rohe": (RoHeTrainConfig, train_rohe),
+    "fastrohgcn": (FastRoHGCNTrainConfig, train_fastrohgcn),
 }
 
 

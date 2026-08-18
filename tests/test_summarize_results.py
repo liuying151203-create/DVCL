@@ -16,6 +16,7 @@ def row(seed, attack, rate, accuracy):
         "model": "dvcl",
         "variant": "default",
         "attack": attack,
+        "attack_variant": "default",
         "rate": rate,
         "split_seed": 1,
         "attack_seed": 1,
@@ -38,3 +39,12 @@ def test_summary_groups_train_seeds_and_attack_conditions():
     attack_average = SUMMARY.attack_averages(rows)
     assert len(attack_average) == 1
     assert attack_average[0]["accuracy_mean"] == 0.8
+
+
+def test_attack_variants_are_not_merged():
+    rows = [
+        {**row(1, "prbcd", 5, 0.8), "attack_variant": "default"},
+        {**row(1, "prbcd", 5, 0.5), "attack_variant": "unconstrained"},
+    ]
+    assert len(SUMMARY.aggregate(rows)) == 2
+    assert len(SUMMARY.attack_averages(rows)) == 2

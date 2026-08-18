@@ -10,6 +10,7 @@ import torch
 from torch import nn
 
 from .artifacts import AttackArtifact, CleanGraphArtifact, SplitArtifact
+from .attacks import apply_target_change
 from .environment import resolve_device
 from .models.dvcl import (
     DualViewContrastiveDefense,
@@ -24,13 +25,18 @@ from .models.semantic import (
     semantic_graph,
     transition_edges,
 )
-from .models.baselines import HeteroSAGE
-from .graph_adapter import hete_adjs_to_dgl, meta_path_adjacency
+from .models.baselines import HeteroGuard, HeteroSAGE
+from .models.rohe import RoHe
+from .models.fastrohgcn import FastRoHGCN
+from .graph_adapter import hete_adjs_to_dgl, meta_path_adjacency, sparse_to_edge_index
 from .training import (
     DVCLTrainConfig,
     HANTrainConfig,
     HSeCoTrainConfig,
     HeteroSAGETrainConfig,
+    HeteroGuardTrainConfig,
+    RoHeTrainConfig,
+    FastRoHGCNTrainConfig,
     LegacyEarlyStopping,
     TrainingResult,
     classification_metrics,
@@ -78,6 +84,17 @@ def train_han(
         "semantic_attention": model.semantic_weights().detach().cpu().tolist(),
         "meta_path_edges": [int(graph.num_edges()) for graph in views],
     })
+    if _is_target_evasion(attack):
+        model.eval()
+        with torch.no_grad():
+            clean_logits = model(features, views)
+        _evaluate_target_evasion(
+            result, clean, attack, labels, clean_logits,
+            lambda adjs: model(features, [
+                dgl.from_scipy(meta_path_adjacency(adjs, path)).to(target)
+                for path in clean.meta_paths
+            ]),
+        )
     return result
 
 
@@ -126,6 +143,268 @@ def train_heterosage(
         "heterogeneous_edges": int(graph.num_edges()),
         "non_target_feature_fill": "zero",
     })
+    if _is_target_evasion(attack):
+        model.eval()
+        with torch.no_grad():
+            clean_logits = model(graph, node_features)[clean.predict_ntype]
+
+        def target_forward(adjs):
+            attacked_graph = hete_adjs_to_dgl(
+                adjs, clean.canonical_etypes, clean.node_counts
+            ).to(target)
+            return model(attacked_graph, node_features)[clean.predict_ntype]
+
+        _evaluate_target_evasion(
+            result, clean, attack, labels, clean_logits, target_forward
+        )
+    return result
+
+
+def train_heteroguard(
+    clean: CleanGraphArtifact,
+    split: SplitArtifact,
+    attack: Optional[AttackArtifact],
+    config: HeteroGuardTrainConfig,
+    train_seed: int,
+    epochs: int,
+    patience: int,
+    device: str,
+    checkpoint_path: Path,
+) -> TrainingResult:
+    set_random_seed(train_seed)
+    target = _device(device)
+    features, labels, masks = _inputs(clean, split, target)
+    node_features = {
+        node_type: features.new_zeros((count, features.shape[1]))
+        for node_type, count in clean.node_counts.items()
+    }
+    node_features[clean.predict_ntype] = features
+
+    def edge_indices(adjs):
+        return {
+            canonical: sparse_to_edge_index(adjs[canonical[1]], target)
+            for canonical in clean.canonical_etypes
+        }
+
+    selected_edges = edge_indices(_selected_adjs(clean, attack))
+    model = HeteroGuard(
+        clean.canonical_etypes,
+        features.shape[1],
+        config.hidden_dim,
+        clean.num_classes,
+        config.num_layers,
+        config.dropout,
+        config.attention_threshold,
+        config.gated_attention,
+    ).to(target)
+    result = _train_supervised(
+        model=model,
+        forward=lambda: model(node_features, selected_edges)[clean.predict_ntype],
+        labels=labels,
+        masks=masks,
+        config=config,
+        epochs=epochs,
+        patience=patience,
+        checkpoint_path=checkpoint_path,
+    )
+    result.diagnostics.update({
+        "attention_threshold": config.attention_threshold,
+        "gated_attention": config.gated_attention,
+        "attention_density": model.last_attention_density,
+        "non_target_feature_fill": "zero",
+    })
+    if _is_target_evasion(attack):
+        model.eval()
+        with torch.no_grad():
+            clean_logits = model(node_features, selected_edges)[clean.predict_ntype]
+        _evaluate_target_evasion(
+            result, clean, attack, labels, clean_logits,
+            lambda adjs: model(node_features, edge_indices(adjs))[clean.predict_ntype],
+        )
+    return result
+
+
+def train_rohe(
+    clean: CleanGraphArtifact,
+    split: SplitArtifact,
+    attack: Optional[AttackArtifact],
+    config: RoHeTrainConfig,
+    train_seed: int,
+    epochs: int,
+    patience: int,
+    device: str,
+    checkpoint_path: Path,
+) -> TrainingResult:
+    config = config.freeze_for_dataset(clean.dataset)
+    set_random_seed(train_seed)
+    target = _device(device)
+    features, labels, masks = _inputs(clean, split, target)
+
+    def transitions(adjs):
+        normalized = {}
+        for name, value in adjs.items():
+            value = value.tocsr()
+            degree = np.asarray(value.sum(axis=1)).reshape(-1)
+            degree = np.where(degree > 0, degree, 1)
+            normalized[name] = sp.diags(1.0 / degree).dot(value)
+        result = []
+        for path in clean.meta_paths:
+            matrix = normalized[path[0]]
+            for name in path[1:]:
+                matrix = matrix.dot(normalized[name])
+            result.append(matrix.tocsr())
+        return result
+
+    import scipy.sparse as sp
+
+    selected_transitions = transitions(_selected_adjs(clean, attack))
+    model = RoHe(
+        len(clean.meta_paths), features.shape[1], config.hidden_dim,
+        clean.num_classes, config.heads, config.dropout, config.top_t,
+    ).to(target)
+    result = _train_supervised(
+        model=model,
+        forward=lambda: model(features, selected_transitions),
+        labels=labels,
+        masks=masks,
+        config=config,
+        epochs=epochs,
+        patience=patience,
+        checkpoint_path=checkpoint_path,
+    )
+    result.diagnostics.update({
+        "top_t": config.top_t,
+        "semantic_attention": model.semantic_weights().detach().cpu().tolist(),
+    })
+    if _is_target_evasion(attack):
+        model.eval()
+        with torch.no_grad():
+            clean_logits = model(features, selected_transitions)
+        _evaluate_target_evasion(
+            result, clean, attack, labels, clean_logits,
+            lambda adjs: model(features, transitions(adjs)),
+        )
+    return result
+
+
+def train_fastrohgcn(
+    clean: CleanGraphArtifact,
+    split: SplitArtifact,
+    attack: Optional[AttackArtifact],
+    config: FastRoHGCNTrainConfig,
+    train_seed: int,
+    epochs: int,
+    patience: int,
+    device: str,
+    checkpoint_path: Path,
+) -> TrainingResult:
+    import dgl
+    import scipy.sparse as sp
+
+    set_random_seed(train_seed)
+    target = _device(device)
+    features, labels, masks = _inputs(clean, split, target)
+    node_types = list(clean.node_counts)
+    offsets = {}
+    offset = 0
+    for node_type in node_types:
+        offsets[node_type] = offset
+        offset += clean.node_counts[node_type]
+    target_start = offsets[clean.predict_ntype]
+    target_end = target_start + clean.node_counts[clean.predict_ntype]
+
+    def preprocess(adjs):
+        rows, columns, weights = [], [], []
+        for source_type, relation, target_type in clean.canonical_etypes:
+            adjacency = adjs[relation].tocsr().astype(np.float32)
+            degree = np.asarray(adjacency.sum(axis=1)).reshape(-1)
+            degree = np.where(degree > 0, degree, 1)
+            normalized = sp.diags(1.0 / degree).dot(adjacency).tocoo()
+            rows.extend((normalized.row + offsets[source_type]).tolist())
+            columns.extend((normalized.col + offsets[target_type]).tolist())
+            weights.extend(normalized.data.tolist())
+
+        topology = None
+        for path in clean.meta_paths:
+            value = meta_path_adjacency(adjs, path).astype(np.float32)
+            topology = value if topology is None else topology + value
+        topology = topology.tocsr()
+        virtual = set()
+        for row in range(topology.shape[0]):
+            start, end = topology.indptr[row], topology.indptr[row + 1]
+            candidates = topology.indices[start:end]
+            scores = topology.data[start:end]
+            if candidates.size:
+                order = np.argsort(scores)[-config.topk_similarity:]
+                virtual.update((row, int(candidates[index])) for index in order)
+        feature_graph = build_feature_knn_graph(
+            features, config.topk_similarity, "symmetric"
+        )
+        feature_rows, feature_columns = feature_graph.edges()
+        virtual.update(zip(
+            feature_rows.detach().cpu().tolist(),
+            feature_columns.detach().cpu().tolist(),
+        ))
+        for row, column in virtual:
+            if row != column:
+                rows.append(row + target_start)
+                columns.append(column + target_start)
+                weights.append(1.0)
+        for node in range(target_start, target_end):
+            rows.append(node)
+            columns.append(node)
+            weights.append(config.self_loop_weight)
+        matrix = sp.csr_matrix((weights, (rows, columns)), shape=(offset, offset))
+        matrix.sum_duplicates()
+        norm = np.sqrt(np.asarray(matrix.multiply(matrix).sum(axis=1)).reshape(-1))
+        norm = np.where(norm > 0, norm, 1)
+        matrix = sp.diags(1.0 / norm).dot(matrix).tocoo()
+        graph = dgl.graph(
+            (torch.from_numpy(matrix.row), torch.from_numpy(matrix.col)),
+            num_nodes=offset,
+        ).to(target)
+        edge_weight = torch.as_tensor(matrix.data, dtype=features.dtype, device=target)
+        return graph, edge_weight
+
+    selected_graph, selected_weight = preprocess(_selected_adjs(clean, attack))
+    model = FastRoHGCN(
+        clean.node_counts, clean.predict_ntype, features.shape[1],
+        config.projection_dim, config.hidden_dim, config.layers,
+        clean.num_classes, config.dropout,
+    ).to(target)
+
+    def forward(graph=selected_graph, edge_weight=selected_weight):
+        return model(features, graph, edge_weight)[target_start:target_end]
+
+    result = _train_supervised(
+        model=model,
+        forward=forward,
+        labels=labels,
+        masks=masks,
+        config=config,
+        epochs=epochs,
+        patience=patience,
+        checkpoint_path=checkpoint_path,
+    )
+    result.diagnostics.update({
+        "implementation": "independent reproduction from official FastRo-HGCN",
+        "official_revision": "ab938c28fb3d6c22a509f4d1f5050d810fb4e84a",
+        "topk_similarity": config.topk_similarity,
+        "self_loop_weight": config.self_loop_weight,
+        "full_graph_edges": int(selected_graph.num_edges()),
+    })
+    if _is_target_evasion(attack):
+        model.eval()
+        with torch.no_grad():
+            clean_logits = forward()
+
+        def target_forward(adjs):
+            graph, edge_weight = preprocess(adjs)
+            return model(features, graph, edge_weight)[target_start:target_end]
+
+        _evaluate_target_evasion(
+            result, clean, attack, labels, clean_logits, target_forward
+        )
     return result
 
 
@@ -234,10 +513,25 @@ def train_hseco(
         test_logits = node_model(features, last_graph)
     metrics = classification_metrics(test_logits[masks["test"]], labels[masks["test"]])
     save_checkpoint(checkpoint_path, holder, config, stopper.best_epoch)
-    return TrainingResult(
+    result = TrainingResult(
         metrics, history, stopper.best_epoch, stopped_epoch,
         {"semantic_attention": last_attention.tolist()},
     )
+    if _is_target_evasion(attack):
+        def target_forward(adjs):
+            attacked_transitions = transition_edges(features, adjs, clean.meta_paths)
+            attacked_views = purified_graphs(attacked_transitions, config.thresholds)
+            semantic(features, attacked_views)
+            attacked_attention = semantic.semantic_weights()
+            attacked_graph = dgl.from_scipy(semantic_graph(
+                attacked_transitions, attacked_attention, config.global_threshold
+            )).to(target)
+            return node_model(features, attacked_graph)
+
+        _evaluate_target_evasion(
+            result, clean, attack, labels, test_logits, target_forward
+        )
+    return result
 
 
 def train_dvcl(
@@ -353,7 +647,22 @@ def train_dvcl(
     }
     if model.last_gate_weight is not None:
         diagnostics["gate_mean"] = float(model.last_gate_weight.mean())
-    return TrainingResult(metrics, history, stopper.best_epoch, stopped_epoch, diagnostics)
+    result = TrainingResult(metrics, history, stopper.best_epoch, stopped_epoch, diagnostics)
+    if _is_target_evasion(attack):
+        def target_forward(adjs):
+            attacked_transitions = transition_edges(features, adjs, clean.meta_paths)
+            attacked_views = purified_graphs(attacked_transitions, config.thresholds)
+            semantic(features, attacked_views)
+            attacked_attention = semantic.semantic_weights()
+            attacked_graph = dgl.from_scipy(semantic_graph(
+                attacked_transitions, attacked_attention, config.global_threshold
+            )).to(target)
+            return model(features, attacked_graph, feature_graph)[0]
+
+        _evaluate_target_evasion(
+            result, clean, attack, labels, test_logits, target_forward
+        )
+    return result
 
 
 def _train_supervised(
@@ -417,7 +726,53 @@ def _selected_adjs(
         return clean.hete_adjs
     if attack.dataset != clean.dataset or attack.clean_version != clean.version:
         raise ValueError("Attack artifact does not belong to the selected clean graph")
+    if _is_target_evasion(attack):
+        return clean.hete_adjs
     return attack.perturbed_hete_adjs
+
+
+def _is_target_evasion(attack: Optional[AttackArtifact]) -> bool:
+    return bool(
+        attack is not None
+        and attack.threat_model == "evasion"
+        and attack.scope == "target"
+    )
+
+
+def _evaluate_target_evasion(
+    result: TrainingResult,
+    clean: CleanGraphArtifact,
+    attack: AttackArtifact,
+    labels: torch.Tensor,
+    clean_logits: torch.Tensor,
+    forward_for_adjs,
+) -> None:
+    if attack.target_nodes is None or not attack.target_changes:
+        raise ValueError("Target evasion requires target nodes and per-target changes")
+    targets = attack.target_nodes.long().to(labels.device)
+    clean_target_metrics = classification_metrics(
+        clean_logits[targets], labels[targets]
+    )
+    attacked_logits = []
+    attacked_labels = []
+    with torch.no_grad():
+        for record in attack.target_changes:
+            target = int(record["target"])
+            logits = forward_for_adjs(apply_target_change(clean, record))
+            attacked_logits.append(logits[target].unsqueeze(0))
+            attacked_labels.append(labels[target].unsqueeze(0))
+    target_logits = torch.cat(attacked_logits, dim=0)
+    target_labels = torch.cat(attacked_labels, dim=0)
+    full_test_clean_metrics = dict(result.metrics)
+    result.metrics = classification_metrics(target_logits, target_labels)
+    result.diagnostics.update({
+        "evaluation_scope": "target",
+        "threat_model": "evasion",
+        "target_count": len(attack.target_changes),
+        "clean_target_metrics": clean_target_metrics,
+        "full_test_clean_metrics": full_test_clean_metrics,
+        "target_accuracy_drop": clean_target_metrics["accuracy"] - result.metrics["accuracy"],
+    })
 
 
 def _inputs(clean: CleanGraphArtifact, split: SplitArtifact, device):

@@ -14,7 +14,7 @@ from dvcl_bench.paths import ExperimentLayout
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Prepare a versioned clean graph artifact.")
-    parser.add_argument("--dataset", required=True, choices=["acm", "dblp"])
+    parser.add_argument("--dataset", required=True, choices=["acm", "dblp", "aminer"])
     parser.add_argument("--data-root", default=str(ROOT / "data"))
     parser.add_argument("--version", default="v1")
     parser.add_argument("--output")

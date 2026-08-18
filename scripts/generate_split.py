@@ -14,7 +14,7 @@ from dvcl_bench.splits import build_split_artifact, import_split_artifact
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate or import a frozen data split.")
-    parser.add_argument("--dataset", required=True, choices=["acm", "dblp"])
+    parser.add_argument("--dataset", required=True, choices=["acm", "dblp", "aminer"])
     parser.add_argument("--data-root", default=str(ROOT / "data"))
     parser.add_argument("--clean-path")
     parser.add_argument("--seed", type=int, default=1)

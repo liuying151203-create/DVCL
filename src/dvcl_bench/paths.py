@@ -45,6 +45,9 @@ class ExperimentLayout:
 
     def run_dir(self, spec) -> Path:
         variant = str(spec.model.config.get("variant", "default"))
+        attack_name = spec.attack.name
+        if spec.attack.variant != "default":
+            attack_name = f"{attack_name}_{spec.attack.variant}"
         return (
             self.outputs
             / "runs"
@@ -52,7 +55,7 @@ class ExperimentLayout:
             / spec.dataset
             / spec.model.name
             / variant
-            / spec.attack.name
+            / attack_name
             / f"rate_{format_rate(spec.attack.rate)}"
             / f"split_seed_{spec.seeds.split}"
             / f"attack_seed_{spec.seeds.attack}"

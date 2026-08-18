@@ -133,6 +133,7 @@ def command_for(
         "--rate", str(rate),
         "--threat-model", attack.get("threat_model", "poisoning"),
         "--scope", attack.get("scope", "global"),
+        "--attack-variant", attack.get("variant", "default"),
         "--split-name", split_name,
         "--split-seed", str(split_seed),
         "--attack-seed", str(attack_seed),
@@ -146,9 +147,13 @@ def command_for(
         command.extend([
             "--attack-path",
             attack["path_pattern"].format(
-                dataset=dataset, attack=attack["name"], rate=f"{rate:g}", seed=attack_seed
+                dataset=dataset, model=model, attack=attack["name"],
+                variant=attack.get("variant", "default"),
+                rate=f"{rate:g}", seed=attack_seed
             ),
         ])
+    if attack.get("adaptive", False):
+        command.append("--adaptive")
     return command
 
 

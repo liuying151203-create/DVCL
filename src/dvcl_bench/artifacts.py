@@ -62,6 +62,10 @@ class AttackArtifact:
     source: str
     source_sha256: Optional[str] = None
     provenance: Dict[str, Any] = field(default_factory=dict)
+    threat_model: str = "poisoning"
+    scope: str = "global"
+    adaptive: bool = False
+    target_changes: List[Dict[str, Any]] = field(default_factory=list)
 
 
 def save_clean_artifact(value: CleanGraphArtifact, path: Path) -> None:
@@ -209,6 +213,10 @@ def attack_from_object(value: Any) -> AttackArtifact:
         source=str(_get(value, "source", "legacy_artifact")),
         source_sha256=_get(value, "source_sha256"),
         provenance=dict(_get(value, "provenance", {})),
+        threat_model=str(_get(value, "threat_model", "poisoning")),
+        scope=str(_get(value, "scope", "global")),
+        adaptive=bool(_get(value, "adaptive", False)),
+        target_changes=list(_get(value, "target_changes", [])),
     )
 
 
@@ -252,6 +260,10 @@ def _metadata(kind: str, value: Any) -> Dict[str, Any]:
             "source": value.source,
             "source_sha256": value.source_sha256,
             "provenance": value.provenance,
+            "threat_model": value.threat_model,
+            "scope": value.scope,
+            "adaptive": value.adaptive,
+            "target_change_records": len(value.target_changes),
             "stats": value.stats,
         })
     return base
