@@ -66,6 +66,42 @@ def test_rohe_forward_shape():
     assert logits.shape == (5, 2)
 
 
+def test_rohe_chunked_confidence_matches_dense_scoring():
+    import scipy.sparse as sp
+
+    features = torch.randn(6, 4, requires_grad=True)
+    transition = sp.csr_matrix(torch.ones(6, 6).numpy())
+    model = RoHe(1, 4, 3, 2, 2, 0.0, [2])
+    conv = model.convs[0]
+    conv.confidence_chunk_size = 5
+    projected = conv.projection(features).view(6, 2, 3)
+    coo = transition.tocoo()
+    rows = torch.as_tensor(coo.row, dtype=torch.long)
+    columns = torch.as_tensor(coo.col, dtype=torch.long)
+    prior = torch.as_tensor(coo.data, dtype=features.dtype)
+    actual = conv._confidence(projected, rows, columns, prior)
+    expected = (
+        projected[rows] * projected[columns]
+    ).sum(-1).sum(-1).detach() * prior
+    assert torch.allclose(actual, expected)
+
+    logits = model(features, [transition])
+    logits.sum().backward()
+    assert torch.isfinite(features.grad).all()
+
+
+def test_rohe_vectorized_top_t_matches_grouped_reference():
+    import numpy as np
+
+    model = RoHe(1, 4, 3, 2, 2, 0.0, [2])
+    conv = model.convs[0]
+    indptr = np.asarray([0, 3, 3, 7])
+    rows = torch.tensor([0, 0, 0, 2, 2, 2, 2])
+    confidence = torch.tensor([0.5, -0.1, 0.7, 0.2, 0.9, -0.4, 0.3])
+    retained = conv._top_t_mask(indptr, rows, confidence)
+    assert retained.tolist() == [True, False, True, False, True, False, True]
+
+
 def test_fastrohgcn_forward_shape():
     graph = dgl.graph(([0, 1, 2, 3], [1, 0, 3, 2]), num_nodes=4)
     model = FastRoHGCN(

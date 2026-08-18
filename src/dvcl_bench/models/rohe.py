@@ -12,6 +12,8 @@ from .semantic import SemanticAttention
 
 
 class RoHeConv(nn.Module):
+    confidence_chunk_size = 65536
+
     def __init__(self, input_dim, output_dim, heads, dropout, top_t):
         super().__init__()
         self.projection = nn.Linear(input_dim, output_dim * heads, bias=False)
@@ -38,16 +40,20 @@ class RoHeConv(nn.Module):
         rows = torch.as_tensor(coo.row, dtype=torch.long, device=features.device)
         columns = torch.as_tensor(coo.col, dtype=torch.long, device=features.device)
         prior = torch.as_tensor(coo.data, dtype=features.dtype, device=features.device)
-        edge_scores = (projected[rows] * projected[columns]).sum(-1)
-        confidence = edge_scores.sum(-1) * prior
-        retained = self._top_t_mask(coo.row, confidence)
+        confidence = self._confidence(projected, rows, columns, prior)
+        retained = self._top_t_mask(transition.indptr, rows, confidence)
+        retained_rows = rows[retained]
+        retained_columns = columns[retained]
+        edge_scores = (
+            projected[retained_rows] * projected[retained_columns]
+        ).sum(-1)
         graph = dgl.graph(
-            (rows[retained], columns[retained]),
+            (retained_rows, retained_columns),
             num_nodes=features.shape[0],
             device=features.device,
         )
         graph.srcdata["projected"] = projected
-        logits = edge_scores[retained].unsqueeze(-1)
+        logits = edge_scores.unsqueeze(-1)
         graph.edata["attention"] = edge_softmax(graph, logits)
         graph.update_all(
             fn.u_mul_e("projected", "attention", "message"),
@@ -55,18 +61,43 @@ class RoHeConv(nn.Module):
         )
         return F.elu(graph.dstdata["output"])
 
-    def _top_t_mask(self, source_rows, confidence):
+    def _confidence(self, projected, rows, columns, prior):
+        confidence = torch.empty(
+            rows.numel(), dtype=projected.dtype, device=projected.device
+        )
+        with torch.no_grad():
+            for start in range(0, rows.numel(), self.confidence_chunk_size):
+                end = min(start + self.confidence_chunk_size, rows.numel())
+                edge_scores = (
+                    projected[rows[start:end]] * projected[columns[start:end]]
+                ).sum(-1)
+                confidence[start:end] = edge_scores.sum(-1) * prior[start:end]
+        return confidence
+
+    def _top_t_mask(self, indptr, source_rows, confidence):
         retained = torch.zeros(confidence.shape[0], dtype=torch.bool, device=confidence.device)
-        order = np.argsort(source_rows, kind="stable")
-        sorted_rows = source_rows[order]
-        boundaries = np.flatnonzero(np.r_[True, sorted_rows[1:] != sorted_rows[:-1], True])
-        for start, end in zip(boundaries[:-1], boundaries[1:]):
-            indices = torch.as_tensor(order[start:end], dtype=torch.long, device=confidence.device)
-            count = min(self.top_t, indices.numel())
-            if count:
-                chosen = indices[torch.topk(confidence[indices], count).indices]
-                chosen = chosen[confidence[chosen] >= 0]
-                retained[chosen] = True
+        counts = np.diff(indptr)
+        max_degree = int(counts.max(initial=0))
+        count = min(self.top_t, max_degree)
+        if not count:
+            return retained
+        starts = torch.as_tensor(
+            indptr[:-1], dtype=torch.long, device=confidence.device
+        )
+        positions = torch.arange(
+            confidence.numel(), device=confidence.device
+        ) - starts[source_rows]
+        padded = torch.full(
+            (len(counts), max_degree),
+            -torch.inf,
+            dtype=confidence.dtype,
+            device=confidence.device,
+        )
+        padded[source_rows, positions] = confidence
+        values, selected_positions = torch.topk(padded, count, dim=1)
+        selected = starts.unsqueeze(1) + selected_positions
+        valid = values >= 0
+        retained[selected[valid]] = True
         return retained
 
 
