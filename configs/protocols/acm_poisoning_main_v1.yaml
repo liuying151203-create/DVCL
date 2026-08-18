@@ -1,0 +1,43 @@
+protocol: acm_poisoning_main_v1
+device: cuda:0
+
+datasets:
+  - acm
+
+models:
+  - name: han
+    backend: native
+    config_path: configs/models/han.yaml
+  - name: heterosage
+    backend: native
+    config_path: configs/models/heterosage.yaml
+  - name: hseco
+    backend: native
+    config_path: configs/models/hseco_native.yaml
+  - name: dvcl
+    backend: native
+    config_path: configs/models/dvcl.yaml
+
+split_name_pattern: paper_seed_{seed}
+
+attacks:
+  - name: clean
+    threat_model: poisoning
+    scope: global
+  - name: prbcd
+    rates: [5, 10, 15, 20, 25]
+    threat_model: poisoning
+    scope: global
+  - name: heteprbcd
+    rates: [5, 10, 15, 20, 25]
+    threat_model: poisoning
+    scope: global
+
+seeds:
+  split: [1]
+  attack: [1]
+  train: [1, 2, 3, 4, 5]
+
+training:
+  epochs: 200
+  patience: 100

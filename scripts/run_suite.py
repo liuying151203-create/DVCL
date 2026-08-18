@@ -19,6 +19,7 @@ def parse_args():
     parser.add_argument("--continue-on-error", action="store_true")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--model", action="append", dest="models")
+    parser.add_argument("--variant", action="append", dest="variants")
     parser.add_argument("--device")
     return parser.parse_args()
 
@@ -39,6 +40,23 @@ def select_models(config, selected):
         raise ValueError(f"Unknown selected models: {sorted(missing)}")
     result = dict(config)
     result["models"] = [model for model in config["models"] if model["name"] in selected]
+    return result
+
+
+def select_variants(config, selected):
+    if not selected:
+        return config
+    if "variants" not in config:
+        raise ValueError("Variant selection is only supported for ablation suites")
+    selected = set(selected)
+    available = {variant["name"] for variant in config["variants"]}
+    missing = selected - available
+    if missing:
+        raise ValueError(f"Unknown selected variants: {sorted(missing)}")
+    result = dict(config)
+    result["variants"] = [
+        variant for variant in config["variants"] if variant["name"] in selected
+    ]
     return result
 
 
@@ -141,6 +159,7 @@ def main() -> int:
         path = (ROOT / path).resolve()
     config = load_config(path)
     config = select_models(config, args.models)
+    config = select_variants(config, args.variants)
     if args.device:
         config = {**config, "device": args.device}
     failures = 0

@@ -34,6 +34,17 @@ def test_corrected_dblp_poisoning_suite_size():
     assert len(list(RUN_SUITE.commands(config, "python", ROOT))) == 220
 
 
+def test_corrected_acm_poisoning_suite_sizes():
+    main = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" / "acm_poisoning_main_v1.yaml"
+    )
+    ablation = RUN_SUITE.load_config(
+        ROOT / "configs" / "suites" / "acm_poisoning_ablation_v1.yaml"
+    )
+    assert len(list(RUN_SUITE.commands(main, "python", ROOT))) == 220
+    assert len(list(RUN_SUITE.commands(ablation, "python", ROOT))) == 140
+
+
 def test_model_selection_partitions_formal_suite():
     config = RUN_SUITE.load_config(
         ROOT / "configs" / "protocols" / "dblp_poisoning_main_v1.yaml"
@@ -42,6 +53,16 @@ def test_model_selection_partitions_formal_suite():
     commands = list(RUN_SUITE.commands(selected, "python", ROOT))
     assert len(commands) == 55
     assert all(command[command.index("--model") + 1] == "han" for command in commands)
+
+
+def test_variant_selection_partitions_ablation_suite():
+    config = RUN_SUITE.load_config(
+        ROOT / "configs" / "suites" / "acm_poisoning_ablation_v1.yaml"
+    )
+    selected = RUN_SUITE.select_variants(config, ["no_cl"])
+    commands = list(RUN_SUITE.commands(selected, "python", ROOT))
+    assert len(commands) == 35
+    assert all('"variant":"no_cl"' in command[-1] for command in commands)
 
 
 def test_attack_path_pattern_is_expanded():
