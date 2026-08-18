@@ -2,6 +2,10 @@
 
 审计日期：2026-08-05
 
+状态更新：2026-08-18。HG Baseline target evasion 的 artifact、验证、clean-train/
+attacked-test Trainer 分支和独立 suite 已实现，并通过单目标 Runner smoke；正式 210 次
+矩阵尚未运行。下文“缺失/未实现”描述保留的是首次审计时状态，以本更新和扩展计划为准。
+
 ## 1. 结论
 
 当前项目已经完成的 PRBCD/HetePRBCD 实验属于**全局结构投毒攻击
@@ -19,13 +23,12 @@ evasion 后替代现有结果。
 2. `our_local.py` 和 `hete_local.py` 先在 clean 图上训练并恢复 checkpoint，再逐目标
    替换测试图、仅执行前向推理，对应 Atk_RoHe 目标逃逸攻击。
 
-因此，当前实现并非把旧 HSeCo 的**全局攻击协议**误写成 poisoning；真正缺失的是
-第二套 **HG Baseline/Atk_RoHe 目标 evasion 协议**。
+因此，当前实现并非把旧 HSeCo 的**全局攻击协议**误写成 poisoning。首次审计时缺失的
+第二套 **HG Baseline/Atk_RoHe 目标 evasion 协议**现已完成工程实现。
 
-威胁模型判定正确不代表攻击生成参数已经符合论文。进一步审计发现，旧生成包装脚本
-没有传入 `--constrained`，HetePRBCD 也没有传入 `--biased`。因此已有 artifact 的
-poisoning 时机正确，但 PRBCD/HetePRBCD 算法配置与论文描述不完全一致，攻击条件结果
-应视为暂定，等待修正 artifact 后重跑；clean 结果不受影响。
+威胁模型判定正确不代表攻击生成参数已经符合论文。首次审计发现旧生成包装脚本没有
+传入 `--constrained`，HetePRBCD 也没有传入 `--biased`。这些旧结果现已被修正 artifact
+和 ACM/DBLP 共 580 次正式主实验、基线与消融结果取代；clean 结果不受影响。
 
 ## 2. 参考论文协议
 
@@ -33,20 +36,20 @@ poisoning 时机正确，但 PRBCD/HetePRBCD 算法配置与论文描述不完�
 
 | 攻击 | 威胁模型 | 扰动单位 | 当前状态 |
 |---|---|---|---|
-| PRBCD | Poisoning | 全局扰动率 5%–25% | 旧配置已完成，待修正重跑 |
-| HetePRBCD | Poisoning | 全局扰动率 5%–25% | 旧配置已完成，待修正重跑 |
-| HG Baseline | Evasion | 每个目标节点的扰动预算 $\Delta\in\{1,3,5\}$ | 未实现 |
+| PRBCD | Poisoning | 全局扰动率 5%–25% | 修正配置正式实验已完成 |
+| HetePRBCD | Poisoning | 全局扰动率 5%–25% | 修正配置正式实验已完成 |
+| HG Baseline | Evasion | 每个目标节点的扰动预算 $\Delta\in\{1,3,5\}$ | 已实现，正式矩阵待运行 |
 
 HG Baseline 在 ACM 和 DBLP 上攻击 Paper–Author（P–A）边，在 AMiner 上攻击
-Paper–Reference（P–R）边。当前工程只准备了 ACM 和 DBLP，因此下一阶段至少应先补
-这两个数据集的 P–A 目标逃逸攻击；AMiner 需要在数据流水线扩展后另行运行。
+Paper–Reference（P–R）边。ACM/DBLP 的 P–A 目标逃逸 artifact 已准备完成；AMiner
+loader 已实现，但同版原始图文件仍缺失，因此其 P–R 实验尚不能运行。
 
 ## 3. 代码证据
 
 | 检查项 | 当前行为 | 判定 |
 |---|---|---|
 | 协议配置 | `dvcl_main.yaml`、`baseline_main.yaml` 明确设置 `threat_model: poisoning`、`scope: global` | 显式声明全局 poisoning |
-| Runner | `run_experiment.py` 把 `threat_model` 写入 `ExperimentSpec` 和 manifest，但调用 trainer 时没有传入该字段 | `evasion` 当前仅是元数据，不能改变执行语义 |
+| Runner | `run_experiment.py` 校验 artifact 协议，并把 `threat_model`、`scope` 传入原生 trainer | target evasion 进入独立 clean-train/attacked-test 分支 |
 | HAN | 训练前用 `attack.perturbed_hete_adjs` 构建全部元路径图 | 在攻击图上训练 |
 | HeteroSAGE | 训练前用扰动邻接构建异构图 | 在攻击图上训练 |
 | HSeCo | 训练前基于扰动邻接生成 transition、净化视图和语义拓扑 | 在攻击图上训练 |
@@ -75,12 +78,12 @@ artifact。
 | `baseline_main`（HAN、HeteroSAGE） | 20 | 200 | 220 |
 | **合计** | **60** | **520** | **580** |
 
-这些结果只能作为旧攻击配置下 poisoning 行为的诊断数据，不能作为论文最终
-PRBCD/HetePRBCD 数字。ACM 上下降较小可能来自模型对扰动图的重新适应、早停选择和
-DVCL 的固定特征视图；这也不能据此推断 HG Baseline evasion 下的鲁棒性。
+表中 580 次矩阵随后已使用修正 artifact 全部重跑，正式数字见 ACM、DBLP 和跨数据集
+结果文档。ACM 上下降较小可能来自模型对扰动图的重新适应、早停选择和 DVCL 的固定
+特征视图；这也不能据此推断 HG Baseline evasion 下的鲁棒性。
 
-现有结果中没有 `scope: target` 的正式运行，也没有 Atk_RoHe 的逐目标 clean/attacked
-指标。因此当前论文表格尚不能支持目标攻击实验结论。
+现有正式结果中仍没有 `scope: target` 的完整矩阵。单目标 smoke 已证明逐目标 clean/
+attacked 指标链路可运行，但不能写入论文表格。
 
 ## 5. 复现 HG Baseline 的正确流程
 
@@ -113,9 +116,9 @@ PRBCD/HetePRBCD poisoning 或 HG Baseline target evasion。
 
 ## 7. 修复优先级与验收标准
 
-1. **阻断错误配置**：在 evasion 尚未实现前，Runner 遇到
-   `threat_model=evasion` 必须直接报错，禁止生成语义错误的结果。
-2. **实现目标 evasion**：增加目标节点和逐目标攻击 artifact，按
+1. **阻断错误配置（已完成）**：Runner 校验 artifact 的 threat model、scope 和
+   adaptive 声明，并拒绝尚未支持的 global evasion。
+2. **实现目标 evasion（已完成）**：增加目标节点和逐目标攻击 artifact，按
    $\Delta\in\{1,3,5\}$ 复现旧 local 入口的 clean-train/attacked-test 流程。
 3. **实现全局 evasion**：仅在额外研究需要时，为四个原生 trainer 增加双图评估路径。
 4. **补充协议测试**：通过 mock/diagnostics 证明 optimizer step 只访问 clean 图，攻击

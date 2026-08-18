@@ -147,7 +147,10 @@ Artifact 层已完成：
 - ACM、DBLP 独立结果表和双数据集论文总表已经生成；
 - HAN、HeteroSAGE 已进入统一原生协议，跨 ACM/DBLP 的 220 次基线运行已在
   干净提交上完成并汇总；
-- 其他鲁棒基线和目标攻击尚未进入当前统一原生协议。
+- RoHe、HeteroGuard、FastRoHGCN 和 HG Baseline 目标逃逸已经进入统一原生协议，
+  正式扩展矩阵待运行；AMiner loader 与三套正式 suite 已完成，但同版原始图文件仍缺失。
+- 初版 OpenHGNN 规划中的 HGT、MAGNN、HeCo、SimpleHGN 尚未接入；当前只有模型名称
+  映射，OpenHGNN Runner 仍明确阻断执行。HGSL 是预留映射，不属于初版正式清单。
 
 ## 3. 执行原则
 

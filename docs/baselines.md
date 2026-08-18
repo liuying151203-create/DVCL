@@ -121,6 +121,6 @@ Attack Average 包含全部 10 个攻击条件，不包含 clean。
 
 ## 后续鲁棒基线
 
-RoHe、HeteroGuard 和 FastRo-HGCN 需要分别核对官方代码、依赖、输入特征和
-攻击协议后再接入。无法证明源码和协议一致时，只能标记为独立复现或外部后端，
-不能标记为官方等效实现。
+RoHe、HeteroGuard 和 FastRo-HGCN 已接入统一原生协议，并明确标记为独立复现；在
+无法证明源码、预处理和协议逐项一致前，不标记为官方等效实现。正式 poisoning、RND
+和 HG Baseline target evasion 矩阵及运行顺序见 `docs/experiment-expansion.md`。
