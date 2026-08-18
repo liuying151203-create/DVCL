@@ -58,7 +58,7 @@
 | 预期运行数 | 220 | 140 |
 | 结果指标 | Micro-F1 | Micro-F1 |
 | 输入审计 | 12/12 通过 | 8/8 通过 |
-| 当前状态 | 待运行 | 待运行 |
+| 当前状态 | 220/220 完成 | 140/140 完成 |
 
 ### 攻击产物审计
 
@@ -84,6 +84,19 @@
 
 ### 执行分片
 
-- 主实验按模型分为 4 个分片，每片 55 次运行，计划使用 `cuda:0`–`cuda:3`。
+- 主实验按模型分为 4 个逻辑分片，每片 55 次运行。HSeCo 为缩短尾部时间，再按
+  PRBCD 和 HetePRBCD 扰动率拆成互不重叠的执行分片；最终使用 `cuda:1`–`cuda:4`。
 - 消融按 `full`、`no_cl`、`topology_only`、`feature_only` 分为 4 个分片，
   每片 35 次运行；论文表中统一显示为 Full DVCL 或 `w/o ...`。
+- 首次启动三个主实验分片时绕过了 `scripts/activate_gpu_env.sh`，DGL 因缺少
+  `libcusparse.so.12` 动态库路径而立即失败。停止分片并恢复完整激活流程后，所有
+  失败状态均在原 run_dir 中被成功运行覆盖；最终汇总不包含这次启动失败的指标。
+
+### 运行结果
+
+- 完整性：主实验 220/220、消融 140/140，所有 `status.json` 均为 `completed`。
+- 审计：360 个 manifest 均为 `git_dirty=false`，代码提交均为 `bf8c181`。
+- 主实验汇总：`outputs/summaries/acm_poisoning_main_v1`。
+- 消融汇总：`outputs/summaries/acm_poisoning_ablation_v1`。
+- 正式结果：`docs/acm-experiment-results.md`。
+- 主实验四模型与消融四 variant 的最终分片退出码均为 0，无残留失败状态。

@@ -136,17 +136,17 @@ Artifact 层已完成：
 - reference 命令显式冻结 `negative_noise_rate=0.01`，避免旧仓库 YAML 的
   `0.001` 默认覆盖统一协议配置。
 
-### 2.6 尚未完成
+### 2.6 当前完成度与剩余工作
 
 - GPU 环境、张量 smoke 和 ACM 单 epoch GPU Runner 已验收；
 - HSeCo 攻击场景模型 golden 尚未完成；
 - DVCL 模型 golden 尚未完成；
 - 13 条 HSeCo/DVCL Golden 首批矩阵已配置并通过 dry-run，正式 GPU 报告待生成；
-- ACM 和 DBLP 共 220 次主实验已经完成；
-- ACM 140 次消融实验已经完成；
+- ACM 和 DBLP 的修正主实验各 220 次，共 440 次，已经完成；
+- ACM 修正消融实验 140 次已经完成；
 - ACM、DBLP 独立结果表和双数据集论文总表已经生成；
-- HAN、HeteroSAGE 已进入统一原生协议，220/220 次基线实验已完成并汇总；
-  但全部 manifest 为 `git_dirty=true`，干净提交复跑尚未完成；
+- HAN、HeteroSAGE 已进入统一原生协议，跨 ACM/DBLP 的 220 次基线运行已在
+  干净提交上完成并汇总；
 - 其他鲁棒基线和目标攻击尚未进入当前统一原生协议。
 
 ## 3. 执行原则
@@ -345,7 +345,11 @@ DVCL：
 - 220 次运行均来自干净提交，每个条件包含 5 个训练种子，clean、split 和 10 个攻击
   artifact 的哈希审计完整；
 - DBLP 正式结果和 Attack Average 已更新到结果文档及跨数据集论文表；
-- ACM 旧主实验已完成，但攻击条件仍使用旧生成配置，需按修正协议重跑。
+- 修正后的 ACM PRBCD/HetePRBCD 共 10 个 artifact 已提升到正式路径，旧 artifact
+  已归档；
+- `acm_poisoning_main_v1` 的四个模型共 220 次正式运行已完成，全部 manifest
+  来自干净提交，输入哈希审计完整；
+- ACM 正式结果和 Attack Average 已更新到结果文档及跨数据集论文表。
 
 ### 7.1 目标
 
@@ -396,9 +400,9 @@ DVCL：
 
 ### 8.0 实施状态
 
-ACM 140 次 DVCL 组件消融已全部完成，所有条件包含 5 个训练种子，完整 DVCL
-与旧主实验重叠条件结果一致。由于攻击 artifact 配置已经修正，ACM 攻击消融结果
-仍需重跑；clean 消融结果不受影响。DBLP 消融不在当前 140 次 suite 范围内。
+`acm_poisoning_ablation_v1` 的 140 次 DVCL 组件消融已全部完成，所有条件包含
+5 个训练种子，完整 DVCL 与修正主实验重叠条件结果一致。全部 manifest 来自干净
+提交；DBLP 消融不在当前 140 次 suite 范围内。
 
 ### 8.1 目标
 
@@ -430,11 +434,9 @@ ACM 140 次 DVCL 组件消融已全部完成，所有条件包含 5 个训练种
 
 ### 9.0 实施状态
 
-DBLP 修正主实验和 Attack Average 已正式汇总到
-`docs/dblp-experiment-results.md`。跨数据集论文表已由
-`scripts/generate_paper_tables.py` 更新到 `docs/paper-experiment-tables.md`，其中 DBLP
-为正式结果，ACM 攻击主实验、基线和消融仍为暂定结果。ACM 修正复跑、显著性检验
-和最终发布归档仍待完成。
+ACM、DBLP 修正主实验和 ACM 修正消融已经正式汇总到独立结果文档。跨数据集论文表
+已由 `scripts/generate_paper_tables.py` 更新到 `docs/paper-experiment-tables.md`，580 次
+运行全部来自干净提交。显著性检验和最终发布归档仍待完成。
 
 ### 9.1 目标
 
