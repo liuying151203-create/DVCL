@@ -30,31 +30,55 @@ def parse_args():
             ROOT / "outputs" / "summaries" / "dblp_poisoning_main_v1" / "runs.csv"
         ),
     )
+    parser.add_argument(
+        "--corrected-acm-runs",
+        default=str(
+            ROOT / "outputs" / "summaries" / "acm_poisoning_main_v1" / "runs.csv"
+        ),
+    )
+    parser.add_argument(
+        "--corrected-acm-ablation-runs",
+        default=str(
+            ROOT / "outputs" / "summaries" / "acm_poisoning_ablation_v1" / "runs.csv"
+        ),
+    )
     parser.add_argument("--check", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    corrected = load_run_rows(Path(args.corrected_dblp_runs))
+    corrected_dblp = load_run_rows(Path(args.corrected_dblp_runs))
+    corrected_acm = load_run_rows(Path(args.corrected_acm_runs))
+    corrected_ablation = load_run_rows(Path(args.corrected_acm_ablation_runs))
     rows = [
         row for row in load_run_rows(Path(args.runs))
         if not (
-            row["dataset"] == "dblp"
+            row["dataset"] in {"acm", "dblp"}
             and row["model"] in {"hseco", "dvcl"}
             and row["variant"] == "default"
         )
+        and not (
+            row["dataset"] == "acm"
+            and row["model"] == "dvcl"
+            and row["variant"] in {"full", "no_cl", "topology_only", "feature_only"}
+        )
     ]
     rows.extend(
-        row for row in corrected
+        row for row in (*corrected_acm, *corrected_dblp)
         if row["model"] in {"hseco", "dvcl"} and row["variant"] == "default"
     )
+    rows.extend(corrected_ablation)
     baseline_rows = [
         row for row in load_run_rows(Path(args.baseline_runs))
-        if not (row["dataset"] == "dblp" and row["model"] in {"han", "heterosage"})
+        if not (
+            row["dataset"] in {"acm", "dblp"}
+            and row["model"] in {"han", "heterosage"}
+        )
     ]
     baseline_rows.extend(
-        row for row in corrected if row["model"] in {"han", "heterosage"}
+        row for row in (*corrected_acm, *corrected_dblp)
+        if row["model"] in {"han", "heterosage"}
     )
     baseline_audit = audit_manifests(baseline_rows)
     rendered = render_paper_tables(rows, baseline_rows, baseline_audit)
