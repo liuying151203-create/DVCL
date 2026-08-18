@@ -61,6 +61,16 @@ python scripts/check_environment.py \
 
 只有报告中的顶层 `ok` 为 `true` 时，才允许启动正式实验。
 
+运行 HGT、MAGNN、HeCo 和 SimpleHGN 前安装并验证固定 OpenHGNN 修订：
+
+```bash
+bash scripts/install_openhgnn_backend.sh
+python scripts/check_openhgnn_backend.py
+```
+
+安装脚本使用官方修订 `27a483eeb25e5cdfb3be81ab66ba8ef8b3cf73a3`，不升级
+Torch 或 DGL；检查脚本会核对 OpenHGNN 版本及四个模型源码 SHA-256。
+
 `scripts/activate_gpu_env.sh` 会：
 
 - 激活 `DVCL_GPU_ENV` 指定的 Conda 环境；

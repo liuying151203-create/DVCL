@@ -20,5 +20,6 @@ def test_manifest_records_runtime_environment(tmp_path: Path):
     assert manifest["schema_version"] == 2
     assert manifest["environment"]["python"]["version"]
     assert "torch" in manifest["environment"]["packages"]
+    assert "openhgnn" in manifest["environment"]["packages"]
     assert "cuda_available" in manifest["environment"]["accelerator"]
     assert "dgl_backend" in manifest["environment"]["accelerator"]

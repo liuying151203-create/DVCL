@@ -20,6 +20,18 @@ models:
   - name: fastrohgcn
     backend: native
     config_path: configs/models/fastrohgcn.yaml
+  - name: hgt
+    backend: openhgnn
+    config_path: configs/models/hgt.yaml
+  - name: magnn
+    backend: openhgnn
+    config_path: configs/models/magnn.yaml
+  - name: heco
+    backend: openhgnn
+    config_path: configs/models/heco.yaml
+  - name: simplehgn
+    backend: openhgnn
+    config_path: configs/models/simplehgn.yaml
   - name: hseco
     backend: native
     config_path: configs/models/hseco_native.yaml

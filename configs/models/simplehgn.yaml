@@ -1,0 +1,10 @@
+config:
+  hidden_dim: 256
+  num_layers: 3
+  num_heads: 8
+  edge_dim: 64
+  dropout: 0.2
+  slope: 0.05
+  beta: 0.05
+  learning_rate: 0.001
+  weight_decay: 0.0005

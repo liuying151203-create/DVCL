@@ -1,25 +1,11 @@
-protocol: aminer_poisoning_main_v1
+protocol: openhgnn_baselines_poisoning_v1
 device: cuda:0
 
 datasets:
-  - aminer
+  - acm
+  - dblp
 
 models:
-  - name: han
-    backend: native
-    config_path: configs/models/han.yaml
-  - name: heterosage
-    backend: native
-    config_path: configs/models/heterosage.yaml
-  - name: rohe
-    backend: native
-    config_path: configs/models/rohe.yaml
-  - name: heteroguard
-    backend: native
-    config_path: configs/models/heteroguard.yaml
-  - name: fastrohgcn
-    backend: native
-    config_path: configs/models/fastrohgcn.yaml
   - name: hgt
     backend: openhgnn
     config_path: configs/models/hgt.yaml
@@ -32,12 +18,6 @@ models:
   - name: simplehgn
     backend: openhgnn
     config_path: configs/models/simplehgn.yaml
-  - name: hseco
-    backend: native
-    config_path: configs/models/hseco_native.yaml
-  - name: dvcl
-    backend: native
-    config_path: configs/models/dvcl.yaml
 
 split_name_pattern: paper_seed_{seed}
 

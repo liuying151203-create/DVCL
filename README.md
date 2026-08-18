@@ -1,6 +1,6 @@
 # DVCL 实验代码
 
-本仓库用于在统一数据、划分、攻击和评估协议下运行 DVCL 与异构图鲁棒性基线。当前原生支持 ACM、DBLP、AMiner 数据协议，以及 HSeCo、DVCL、HAN、HeteroSAGE、RoHe、HeteroGuard 和 FastRoHGCN。
+本仓库用于在统一数据、划分、攻击和评估协议下运行 DVCL 与异构图鲁棒性基线。当前支持 ACM、DBLP、AMiner 数据协议，以及 HSeCo、DVCL、HAN、HeteroSAGE、RoHe、HeteroGuard、FastRoHGCN、HGT、MAGNN、HeCo 和 SimpleHGN。
 
 ## 实验流程
 
@@ -31,6 +31,13 @@ python scripts/check_environment.py --profile gpu --smoke
 ```
 
 正式协议请求 CUDA 时不会静默回退 CPU。完整安装和环境审计说明见 `docs/environment.md`。
+
+HGT、MAGNN、HeCo 和 SimpleHGN 使用固定 OpenHGNN 后端：
+
+```bash
+bash scripts/install_openhgnn_backend.sh
+python scripts/check_openhgnn_backend.py
+```
 
 ## 准备实验产物
 
@@ -106,7 +113,7 @@ python scripts/run_suite.py --config configs/protocols/baseline_main.yaml --cont
 HAN 和 HeteroSAGE 的 220 次矩阵已完成，当前结果及审计状态见
 `docs/baselines.md`。
 
-新增鲁棒基线、RND、HG Baseline 目标逃逸和攻击因子对照使用独立 suite，执行顺序、
+新增鲁棒基线、OpenHGNN 通用基线、RND、HG Baseline 目标逃逸和攻击因子对照使用独立 suite，执行顺序、
 矩阵规模和 AMiner 数据要求见 `docs/experiment-expansion.md`。
 
 ## 消融实验

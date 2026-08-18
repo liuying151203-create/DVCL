@@ -1,0 +1,12 @@
+config:
+  hidden_dim: 64
+  feature_dropout: 0.3
+  attention_dropout: 0.5
+  schema_sample_size: 7
+  positive_topk: 5
+  temperature: 0.8
+  contrastive_balance: 0.5
+  learning_rate: 0.0008
+  weight_decay: 0.0
+  evaluation_learning_rate: 0.05
+  evaluation_weight_decay: 0.0

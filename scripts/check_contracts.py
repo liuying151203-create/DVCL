@@ -50,6 +50,16 @@ def main() -> int:
     ModelSpec(name="rohe", backend="native")
     ModelSpec(name="heteroguard", backend="native")
     ModelSpec(name="fastrohgcn", backend="native")
+    ModelSpec(name="hgt", backend="openhgnn")
+    ModelSpec(name="magnn", backend="openhgnn")
+    ModelSpec(name="heco", backend="openhgnn")
+    ModelSpec(name="simplehgn", backend="openhgnn")
+    try:
+        ModelSpec(name="hgsl", backend="openhgnn")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("unsupported OpenHGNN model was accepted")
     target = AttackSpec(
         name="hg_baseline", rate=3, threat_model="evasion", scope="target"
     )

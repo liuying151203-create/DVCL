@@ -1,7 +1,7 @@
 # 统一协议基线
 
-> 协议审计状态：clean 结果有效；PRBCD/HetePRBCD 结果暂定，等待按论文约束重新生成
-> 攻击 artifact 后复跑。
+> 协议审计状态：HAN/HeteroSAGE 的修正 PRBCD/HetePRBCD 正式矩阵已经完成；新增
+> RoHe、HeteroGuard、FastRoHGCN 与 OpenHGNN 基线正式矩阵待运行。
 
 ## 已接入模型
 
@@ -15,6 +15,21 @@ attack artifact、训练种子、训练轮数、早停规则、checkpoint 和指
 
 当前实现是统一协议下的独立原生实现，不能直接替代其他论文在不同数据划分、
 攻击文件或训练协议下报告的数字。
+
+### OpenHGNN 通用基线
+
+HGT、MAGNN、HeCo 和 SimpleHGN 使用固定 OpenHGNN 0.4.1 修订 `27a483e`。训练仍由
+本项目读取冻结 artifact、执行统一 split/attack 校验、早停、checkpoint 和指标汇总。
+
+| 模型 | 主要配置 | 协议说明 |
+|---|---|---|
+| HGT | $d=64$, $L=2$, $K=8$, $p=0.4$, $\eta=10^{-3}$ | 官方全图 HGT 编码器与可学习类型特征 |
+| MAGNN | $d=64$, $L=4$, $K=8$, $d_a=128$, $M=5$, $\eta=0.005$ | 每条元路径每节点采样 $M$ 个实例；修正 0.4.1 两处执行缺陷 |
+| HeCo | $d=64$, $p_f=0.3$, $p_a=0.5$, $\tau=0.8$, $\lambda=0.5$ | 对比预训练后训练单个 seeded 线性分类器 |
+| SimpleHGN | $d=256$, $L=3$, $K=8$, $d_e=64$, $\beta=0.05$ | 官方 relation-aware attention 编码器 |
+
+运行时会校验四个官方模型文件的 SHA-256。上述配置是统一协议的冻结复现配置，不等同
+于在其他数据版本或划分上报告的 OpenHGNN 默认结果。
 
 ## 实验矩阵
 
@@ -124,3 +139,6 @@ Attack Average 包含全部 10 个攻击条件，不包含 clean。
 RoHe、HeteroGuard 和 FastRo-HGCN 已接入统一原生协议，并明确标记为独立复现；在
 无法证明源码、预处理和协议逐项一致前，不标记为官方等效实现。正式 poisoning、RND
 和 HG Baseline target evasion 矩阵及运行顺序见 `docs/experiment-expansion.md`。
+
+HGT、MAGNN、HeCo 和 SimpleHGN 的 ACM/DBLP poisoning suite 为
+`configs/protocols/openhgnn_baselines_poisoning_v1.yaml`，共 440 次正式运行。

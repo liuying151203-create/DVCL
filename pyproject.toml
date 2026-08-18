@@ -25,7 +25,16 @@ torch = [
   "torch-geometric==2.5.3",
 ]
 dev = ["pytest>=8,<9"]
-openhgnn = ["openhgnn"]
+openhgnn = [
+  "ogb==1.3.6",
+  "optuna==4.9.0",
+  "colorama==0.4.6",
+  "tensorboard==2.21.0",
+  "lmdb==2.3.0",
+  "ordered-set==4.1.0",
+  "python-igraph==1.0.0",
+  "openhgnn @ git+https://github.com/BUPT-GAMMA/OpenHGNN.git@27a483eeb25e5cdfb3be81ab66ba8ef8b3cf73a3",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

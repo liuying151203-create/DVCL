@@ -20,6 +20,7 @@ def test_runtime_environment_contains_audit_fields():
     assert report["python"]["version"]
     assert report["platform"]["system"]
     assert "torch" in report["packages"]
+    assert "openhgnn" in report["packages"]
     assert "cuda_available" in report["accelerator"]
     assert "dgl_backend" in report["accelerator"]
 

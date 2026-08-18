@@ -8,6 +8,7 @@ LEGACY_MODELS = {"hseco", "dvcl"}
 NATIVE_MODELS = {
     "hseco", "dvcl", "han", "heterosage", "heteroguard", "rohe", "fastrohgcn"
 }
+OPENHGNN_MODELS = {"hgt", "magnn", "heco", "simplehgn"}
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,8 @@ class ModelSpec:
             raise ValueError(f"Legacy backend supports only: {sorted(LEGACY_MODELS)}")
         if self.backend == "native" and self.name not in NATIVE_MODELS:
             raise ValueError(f"Native backend supports only: {sorted(NATIVE_MODELS)}")
+        if self.backend == "openhgnn" and self.name not in OPENHGNN_MODELS:
+            raise ValueError(f"OpenHGNN backend supports only: {sorted(OPENHGNN_MODELS)}")
 
 
 @dataclass(frozen=True)

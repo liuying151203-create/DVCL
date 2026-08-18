@@ -23,10 +23,20 @@ EXPECTED_PACKAGES = {
     "scikit-learn": "1.4.2",
 }
 
+AUDIT_ONLY_PACKAGES = (
+    "openhgnn",
+    "ogb",
+    "optuna",
+    "tensorboard",
+    "lmdb",
+    "ordered-set",
+    "igraph",
+)
+
 
 def package_versions() -> Dict[str, Optional[str]]:
     result = {}
-    for name in EXPECTED_PACKAGES:
+    for name in (*EXPECTED_PACKAGES, *AUDIT_ONLY_PACKAGES):
         try:
             result[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:

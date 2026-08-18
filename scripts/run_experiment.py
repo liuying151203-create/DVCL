@@ -87,12 +87,10 @@ def main() -> int:
     print(f"run_dir: {run_dir}")
     if args.dry_run:
         return 0
-    if spec.model.backend == "native" and spec.extra_args:
+    if spec.model.backend in {"native", "openhgnn"} and spec.extra_args:
         raise SystemExit(
-            "Native runs reject unknown CLI arguments; use --model-config-json for model options"
+            "Managed runs reject unknown CLI arguments; use --model-config-json for model options"
         )
-    if spec.model.backend == "openhgnn":
-        raise SystemExit("OpenHGNN model execution is not implemented yet")
     status_path = run_dir / "status.json"
     metrics_path = run_dir / "metrics.json"
     if not args.force and status_path.exists() and metrics_path.exists():
@@ -128,7 +126,7 @@ def main() -> int:
                 raise RuntimeError(f"Legacy runner returned {returncode}")
             result_payload = {"backend": "legacy"}
         else:
-            result_payload = run_native(spec, inputs, run_dir)
+            result_payload = run_frozen_model(spec, inputs, run_dir)
         save_json(result_payload, metrics_path)
         save_json({
             "state": "completed",
@@ -147,20 +145,26 @@ def main() -> int:
         return 1
 
 
-def run_native(spec, inputs, run_dir):
+def run_frozen_model(spec, inputs, run_dir):
     from dvcl_bench.artifacts import (
         load_attack_artifact,
         load_clean_artifact,
         load_split_artifact,
     )
     from dvcl_bench.attacks import verify_attack
-    from dvcl_bench.registry import build_model_config, get_native_trainer
+    if spec.model.backend == "native":
+        from dvcl_bench.registry import build_model_config, get_native_trainer
+    else:
+        from dvcl_bench.openhgnn_adapter import (
+            build_openhgnn_config as build_model_config,
+            train_openhgnn,
+        )
 
     clean = load_clean_artifact(inputs["clean"])
     split = load_split_artifact(inputs["split"])
     if spec.attack.threat_model == "evasion" and spec.attack.scope != "target":
         raise ValueError(
-            "Native global evasion is not implemented; use HG Baseline target evasion"
+            "Global evasion is not implemented; use HG Baseline target evasion"
         )
     attack = None
     if "attack" in inputs:
@@ -183,7 +187,12 @@ def run_native(spec, inputs, run_dir):
         if not report["ok"]:
             raise ValueError("Attack verification failed: " + "; ".join(report["issues"]))
     config = build_model_config(spec.model.name, spec.model.config)
-    trainer = get_native_trainer(spec.model.name)
+    if spec.model.backend == "native":
+        trainer = get_native_trainer(spec.model.name)
+        extra = {}
+    else:
+        trainer = train_openhgnn
+        extra = {"model_name": spec.model.name}
     result = trainer(
         clean=clean,
         split=split,
@@ -194,6 +203,7 @@ def run_native(spec, inputs, run_dir):
         patience=spec.patience,
         device=spec.device,
         checkpoint_path=run_dir / "checkpoint.pt",
+        **extra,
     )
     write_history(result.history, run_dir / "history.csv")
     return {

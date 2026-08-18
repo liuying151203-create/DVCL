@@ -1,6 +1,6 @@
 import pytest
 
-from dvcl_bench.specs import AttackSpec, ExperimentSpec
+from dvcl_bench.specs import AttackSpec, ExperimentSpec, ModelSpec
 
 
 def test_clean_attack_rejects_nonzero_rate():
@@ -27,3 +27,9 @@ def test_hg_baseline_requires_target_evasion():
         name="hg_baseline", rate=3, threat_model="evasion", scope="target"
     )
     assert value.threat_model == "evasion"
+
+
+def test_openhgnn_models_use_strict_allowlist():
+    assert ModelSpec("hgt", "openhgnn").name == "hgt"
+    with pytest.raises(ValueError, match="OpenHGNN backend supports only"):
+        ModelSpec("hgsl", "openhgnn")

@@ -50,7 +50,7 @@ def test_hg_baseline_target_evasion_suite_size():
         ROOT / "configs" / "protocols" / "hg_baseline_target_evasion_v1.yaml"
     )
     commands = list(RUN_SUITE.commands(config, "python", ROOT))
-    assert len(commands) == 210
+    assert len(commands) == 330
     assert all(command[command.index("--threat-model") + 1] == "evasion" for command in commands)
     assert all(command[command.index("--scope") + 1] == "target" for command in commands)
 
@@ -63,7 +63,16 @@ def test_robust_baseline_and_rnd_suite_sizes():
         ROOT / "configs" / "protocols" / "rnd_poisoning_v1.yaml"
     )
     assert len(list(RUN_SUITE.commands(robust, "python", ROOT))) == 330
-    assert len(list(RUN_SUITE.commands(rnd, "python", ROOT))) == 350
+    assert len(list(RUN_SUITE.commands(rnd, "python", ROOT))) == 550
+
+
+def test_openhgnn_poisoning_suite_size():
+    config = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" / "openhgnn_baselines_poisoning_v1.yaml"
+    )
+    commands = list(RUN_SUITE.commands(config, "python", ROOT))
+    assert len(commands) == 440
+    assert all(command[command.index("--backend") + 1] == "openhgnn" for command in commands)
 
 
 def test_attack_factorial_suite_has_isolated_variants():
@@ -89,9 +98,9 @@ def test_aminer_suite_sizes():
     rnd = RUN_SUITE.load_config(
         ROOT / "configs" / "protocols" / "aminer_rnd_poisoning_v1.yaml"
     )
-    assert len(list(RUN_SUITE.commands(poisoning, "python", ROOT))) == 385
-    assert len(list(RUN_SUITE.commands(target, "python", ROOT))) == 105
-    assert len(list(RUN_SUITE.commands(rnd, "python", ROOT))) == 175
+    assert len(list(RUN_SUITE.commands(poisoning, "python", ROOT))) == 605
+    assert len(list(RUN_SUITE.commands(target, "python", ROOT))) == 165
+    assert len(list(RUN_SUITE.commands(rnd, "python", ROOT))) == 275
 
 
 def test_model_selection_partitions_formal_suite():

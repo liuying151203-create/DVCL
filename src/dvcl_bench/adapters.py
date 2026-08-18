@@ -90,7 +90,7 @@ def train_han(
             clean_logits = model(features, views)
         _evaluate_target_evasion(
             result, clean, attack, labels, clean_logits,
-            lambda adjs: model(features, [
+            lambda adjs, record: model(features, [
                 dgl.from_scipy(meta_path_adjacency(adjs, path)).to(target)
                 for path in clean.meta_paths
             ]),
@@ -148,7 +148,7 @@ def train_heterosage(
         with torch.no_grad():
             clean_logits = model(graph, node_features)[clean.predict_ntype]
 
-        def target_forward(adjs):
+        def target_forward(adjs, record):
             attacked_graph = hete_adjs_to_dgl(
                 adjs, clean.canonical_etypes, clean.node_counts
             ).to(target)
@@ -219,7 +219,7 @@ def train_heteroguard(
             clean_logits = model(node_features, selected_edges)[clean.predict_ntype]
         _evaluate_target_evasion(
             result, clean, attack, labels, clean_logits,
-            lambda adjs: model(node_features, edge_indices(adjs))[clean.predict_ntype],
+            lambda adjs, record: model(node_features, edge_indices(adjs))[clean.predict_ntype],
         )
     return result
 
@@ -282,7 +282,7 @@ def train_rohe(
             clean_logits = model(features, selected_transitions)
         _evaluate_target_evasion(
             result, clean, attack, labels, clean_logits,
-            lambda adjs: model(features, transitions(adjs)),
+            lambda adjs, record: model(features, transitions(adjs)),
         )
     return result
 
@@ -398,7 +398,7 @@ def train_fastrohgcn(
         with torch.no_grad():
             clean_logits = forward()
 
-        def target_forward(adjs):
+        def target_forward(adjs, record):
             graph, edge_weight = preprocess(adjs)
             return model(features, graph, edge_weight)[target_start:target_end]
 
@@ -518,7 +518,7 @@ def train_hseco(
         {"semantic_attention": last_attention.tolist()},
     )
     if _is_target_evasion(attack):
-        def target_forward(adjs):
+        def target_forward(adjs, record):
             attacked_transitions = transition_edges(features, adjs, clean.meta_paths)
             attacked_views = purified_graphs(attacked_transitions, config.thresholds)
             semantic(features, attacked_views)
@@ -649,7 +649,7 @@ def train_dvcl(
         diagnostics["gate_mean"] = float(model.last_gate_weight.mean())
     result = TrainingResult(metrics, history, stopper.best_epoch, stopped_epoch, diagnostics)
     if _is_target_evasion(attack):
-        def target_forward(adjs):
+        def target_forward(adjs, record):
             attacked_transitions = transition_edges(features, adjs, clean.meta_paths)
             attacked_views = purified_graphs(attacked_transitions, config.thresholds)
             semantic(features, attacked_views)
@@ -758,7 +758,7 @@ def _evaluate_target_evasion(
     with torch.no_grad():
         for record in attack.target_changes:
             target = int(record["target"])
-            logits = forward_for_adjs(apply_target_change(clean, record))
+            logits = forward_for_adjs(apply_target_change(clean, record), record)
             attacked_logits.append(logits[target].unsqueeze(0))
             attacked_labels.append(labels[target].unsqueeze(0))
     target_logits = torch.cat(attacked_logits, dim=0)

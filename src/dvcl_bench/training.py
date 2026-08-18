@@ -136,6 +136,58 @@ class FastRoHGCNTrainConfig:
 
 
 @dataclass
+class HGTTrainConfig:
+    hidden_dim: int = 64
+    num_layers: int = 2
+    num_heads: int = 8
+    dropout: float = 0.4
+    norm: bool = True
+    learning_rate: float = 0.001
+    weight_decay: float = 0.0001
+
+
+@dataclass
+class SimpleHGNTrainConfig:
+    hidden_dim: int = 256
+    num_layers: int = 3
+    num_heads: int = 8
+    edge_dim: int = 64
+    dropout: float = 0.2
+    slope: float = 0.05
+    beta: float = 0.05
+    learning_rate: float = 0.001
+    weight_decay: float = 0.0005
+
+
+@dataclass
+class MAGNNTrainConfig:
+    hidden_dim: int = 64
+    inter_attention_dim: int = 128
+    num_heads: int = 8
+    num_layers: int = 4
+    dropout: float = 0.3
+    encoder_type: str = "RotateE"
+    instances_per_node: int = 5
+    learning_rate: float = 0.005
+    weight_decay: float = 0.001
+
+
+@dataclass
+class HeCoTrainConfig:
+    hidden_dim: int = 64
+    feature_dropout: float = 0.3
+    attention_dropout: float = 0.5
+    schema_sample_size: int = 7
+    positive_topk: int = 5
+    temperature: float = 0.8
+    contrastive_balance: float = 0.5
+    learning_rate: float = 0.0008
+    weight_decay: float = 0.0
+    evaluation_learning_rate: float = 0.05
+    evaluation_weight_decay: float = 0.0
+
+
+@dataclass
 class TrainingResult:
     metrics: Dict[str, float]
     history: List[Dict[str, float]]
