@@ -24,17 +24,40 @@ def parse_args():
         "--baseline-runs",
         default=str(ROOT / "outputs" / "summaries" / "baseline_main" / "runs.csv"),
     )
+    parser.add_argument(
+        "--corrected-dblp-runs",
+        default=str(
+            ROOT / "outputs" / "summaries" / "dblp_poisoning_main_v1" / "runs.csv"
+        ),
+    )
     parser.add_argument("--check", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    baseline_rows = load_run_rows(Path(args.baseline_runs))
-    baseline_audit = audit_manifests(baseline_rows)
-    rendered = render_paper_tables(
-        load_run_rows(Path(args.runs)), baseline_rows, baseline_audit
+    corrected = load_run_rows(Path(args.corrected_dblp_runs))
+    rows = [
+        row for row in load_run_rows(Path(args.runs))
+        if not (
+            row["dataset"] == "dblp"
+            and row["model"] in {"hseco", "dvcl"}
+            and row["variant"] == "default"
+        )
+    ]
+    rows.extend(
+        row for row in corrected
+        if row["model"] in {"hseco", "dvcl"} and row["variant"] == "default"
     )
+    baseline_rows = [
+        row for row in load_run_rows(Path(args.baseline_runs))
+        if not (row["dataset"] == "dblp" and row["model"] in {"han", "heterosage"})
+    ]
+    baseline_rows.extend(
+        row for row in corrected if row["model"] in {"han", "heterosage"}
+    )
+    baseline_audit = audit_manifests(baseline_rows)
+    rendered = render_paper_tables(rows, baseline_rows, baseline_audit)
     output = Path(args.output)
     if args.check:
         if not output.is_file() or output.read_text(encoding="utf-8") != rendered:

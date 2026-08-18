@@ -185,6 +185,9 @@ def render_paper_tables(
         "± 样本标准差，单位为百分数。Accuracy 与",
         "Micro-F1 数值相同，因此统一记为 `Accuracy / Micro-F1`。",
         "",
+        "> 协议审计状态：DBLP `dblp_poisoning_main_v1` 的 220 次运行已正式完成；",
+        "> ACM clean 有效，PRBCD/HetePRBCD 与消融攻击结果等待修正 artifact 后重跑。",
+        "",
         "## 1. 主实验",
         "",
     ]
@@ -193,8 +196,8 @@ def render_paper_tables(
         if dirty:
             lines.extend([
                 "",
-                f"**基线审计状态：暂定。** HAN/HeteroSAGE 的 {dirty} 次运行 manifest",
-                "记录为 `git_dirty=true`，数值完整但需在干净提交上复跑后作为正式论文结果。",
+                f"**ACM 基线审计状态：暂定。** HAN/HeteroSAGE 的 {dirty} 次 ACM 运行",
+                "manifest 记录为 `git_dirty=true`，需结合修正攻击 artifact 在干净提交上复跑。",
             ])
     lines.extend([
         "| Dataset | Attack | Rate | HAN | HeteroSAGE | HSeCo | DVCL | \\(\\Delta\\) |",
