@@ -43,3 +43,47 @@
 - 分片退出码：HAN、HeteroSAGE、HSeCo、DVCL 均为 0，无失败重跑。
 - 异常观察：HAN 在 HetePRBCD 25% 下方差较大；HetePRBCD 各扰动率对训练节点
   高度集中，均已在结果分析中披露。
+
+## ACM 修正投毒协议
+
+| 项目 | 主实验 | 消融实验 |
+|---|---|---|
+| Protocol | `acm_poisoning_main_v1` | `acm_poisoning_ablation_v1` |
+| 配置 | `configs/protocols/acm_poisoning_main_v1.yaml` | `configs/suites/acm_poisoning_ablation_v1.yaml` |
+| 模型 | HAN、HeteroSAGE、HSeCo、DVCL | DVCL 四个组件 variant |
+| 攻击 | Clean、PRBCD、HetePRBCD | Clean、PRBCD、HetePRBCD |
+| 扰动率 | 5%、10%、15%、20%、25% | 5%、15%、25% |
+| Seeds | split 1，attack 1，train 1–5 | split 1，attack 1，train 1–5 |
+| 训练 | 200 epochs，patience 100 | 200 epochs，patience 100 |
+| 预期运行数 | 220 | 140 |
+| 结果指标 | Micro-F1 | Micro-F1 |
+| 输入审计 | 12/12 通过 | 8/8 通过 |
+| 当前状态 | 待运行 | 待运行 |
+
+### 攻击产物审计
+
+修正 artifact 已提升至 `data/attacks/acm`，旧产物归档至
+`outputs/archive/attacks_pre_protocol_v2/acm`。所有条件均严格用满全局预算；训练集
+变化占比用于披露攻击分布，不作为通过条件。
+
+| Attack | Rate | Expected | Actual | Train Change Share |
+|---|---:|---:|---:|---:|
+| PRBCD | 5% | 871 | 871 | 91.62% |
+| PRBCD | 10% | 1743 | 1743 | 89.62% |
+| PRBCD | 15% | 2614 | 2614 | 87.95% |
+| PRBCD | 20% | 3486 | 3486 | 85.74% |
+| PRBCD | 25% | 4358 | 4358 | 83.23% |
+| HetePRBCD | 5% | 871 | 871 | 98.62% |
+| HetePRBCD | 10% | 1743 | 1743 | 96.62% |
+| HetePRBCD | 15% | 2614 | 2614 | 94.22% |
+| HetePRBCD | 20% | 3486 | 3486 | 92.03% |
+| HetePRBCD | 25% | 4358 | 4358 | 89.88% |
+
+`promotion.json` 记录 DVCL `8a354c4`、HSeCo `1ebab2c`、Hetero-Guard
+`b6375a0` 的干净提交以及 clean、split、attack 哈希。
+
+### 执行分片
+
+- 主实验按模型分为 4 个分片，每片 55 次运行，计划使用 `cuda:0`–`cuda:3`。
+- 消融按 `full`、`no_cl`、`topology_only`、`feature_only` 分为 4 个分片，
+  每片 35 次运行；论文表中统一显示为 Full DVCL 或 `w/o ...`。
