@@ -20,7 +20,8 @@ from dvcl_bench.manifest import save_json
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Prepare corrected DBLP attack pilot artifacts.")
+    parser = argparse.ArgumentParser(description="Prepare corrected attack artifacts.")
+    parser.add_argument("--dataset", choices=["acm", "dblp"], default="dblp")
     parser.add_argument("--legacy-root", default=str(ROOT.parent / "HSeCo"))
     parser.add_argument(
         "--output-root", default=str(ROOT / "outputs" / "pilots" / "attack_protocol")
@@ -43,15 +44,31 @@ def main() -> int:
     args = parse_args()
     legacy_root = Path(args.legacy_root).resolve()
     output_root = Path(args.output_root).resolve()
-    clean = load_clean_artifact(ROOT / "data" / "processed" / "dblp" / "clean.pt")
-    split = load_split_artifact(ROOT / "data" / "splits" / "dblp" / "paper_seed_1.pt")
+    clean = load_clean_artifact(
+        ROOT / "data" / "processed" / args.dataset / "clean.pt"
+    )
+    split = load_split_artifact(
+        ROOT / "data" / "splits" / args.dataset / "paper_seed_1.pt"
+    )
     if not args.skip_generation:
         require_gpu()
     for attack in args.attacks:
         for rate in args.rates:
-            source = output_root / "sources" / "dblp" / attack / f"rate_{rate}" / "source.pt"
+            source = (
+                output_root
+                / "sources"
+                / args.dataset
+                / attack
+                / f"rate_{rate}"
+                / "source.pt"
+            )
             artifact_path = (
-                output_root / "artifacts" / "dblp" / attack / f"rate_{rate}" / "attack.pt"
+                output_root
+                / "artifacts"
+                / args.dataset
+                / attack
+                / f"rate_{rate}"
+                / "attack.pt"
             )
             clear_published_artifact(artifact_path)
             if not args.skip_generation:
@@ -60,6 +77,7 @@ def main() -> int:
                     source,
                     attack,
                     rate,
+                    args.dataset,
                     args.attack_seed,
                     args.gpu_id,
                     args.conda_env,
@@ -69,10 +87,17 @@ def main() -> int:
             artifact = import_prbcd_like_attack(
                 clean, split, attack, rate, args.attack_seed, source
             )
-            validate_provenance(artifact.provenance, attack, rate, args.attack_seed)
+            validate_provenance(
+                artifact.provenance, args.dataset, attack, rate, args.attack_seed
+            )
             report = verify_attack(clean, split, artifact)
             rejected_report = (
-                output_root / "audits" / "dblp" / attack / f"rate_{rate}" / "verification.json"
+                output_root
+                / "audits"
+                / args.dataset
+                / attack
+                / f"rate_{rate}"
+                / "verification.json"
             )
             save_json(report, rejected_report)
             if not report["ok"]:
@@ -100,9 +125,11 @@ def require_gpu():
         raise RuntimeError("NVIDIA driver is unavailable; restore GPU access before generation")
 
 
-def generate_source(legacy_root, output, attack, rate, attack_seed, gpu_id, conda_env):
+def generate_source(
+    legacy_root, output, attack, rate, dataset, attack_seed, gpu_id, conda_env
+):
     output.parent.mkdir(parents=True, exist_ok=True)
-    script = legacy_root / "scripts" / f"gen_dblp_{attack}.sh"
+    script = legacy_root / "scripts" / f"gen_{dataset}_{attack}.sh"
     environment = os.environ.copy()
     environment.update({
         "ATK_RATE": str(rate),
@@ -116,10 +143,11 @@ def generate_source(legacy_root, output, attack, rate, attack_seed, gpu_id, cond
     subprocess.run(["bash", str(script)], cwd=legacy_root, env=environment, check=True)
 
 
-def validate_provenance(provenance, attack, rate, attack_seed):
+def validate_provenance(provenance, dataset, attack, rate, attack_seed):
     expected_biased = attack == "heteprbcd"
     expected = {
         "attack": "HetePRBCD" if expected_biased else "PRBCD",
+        "dataset": dataset,
         "rate": rate,
         "seed": attack_seed,
         "constrained": True,
