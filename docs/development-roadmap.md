@@ -338,13 +338,14 @@ DVCL：
 
 ### 7.0 实施状态
 
-- ACM 110 次主实验已完成并汇总；
-- DBLP HSeCo 与 DVCL 在 clean、PRBCD 5% 和 HetePRBCD 5% 上的 6 个单 epoch
-  GPU pilot 已完成；
-- 6 个 pilot 均使用 Tesla V100 和 `cuda:0`，status 为 `completed`；
-- 两个攻击条件的 `attack_verification.json` 与全局预算检查均通过；
-- DBLP 正式 110 次主实验已完成并汇总；
-- 220 次主实验均来自干净提交，且每个条件包含 5 个训练种子。
+- 修正后的 DBLP PRBCD/HetePRBCD 共 10 个 artifact 已提升到正式路径，旧 artifact
+  已归档；
+- `dblp_poisoning_main_v1` 的 HAN、HeteroSAGE、HSeCo、DVCL 共 220 次正式运行
+  已完成，四个模型分片退出码均为 0；
+- 220 次运行均来自干净提交，每个条件包含 5 个训练种子，clean、split 和 10 个攻击
+  artifact 的哈希审计完整；
+- DBLP 正式结果和 Attack Average 已更新到结果文档及跨数据集论文表；
+- ACM 旧主实验已完成，但攻击条件仍使用旧生成配置，需按修正协议重跑。
 
 ### 7.1 目标
 
@@ -396,7 +397,8 @@ DVCL：
 ### 8.0 实施状态
 
 ACM 140 次 DVCL 组件消融已全部完成，所有条件包含 5 个训练种子，完整 DVCL
-与主实验重叠条件结果一致。DBLP 消融不在当前 140 次 suite 范围内。
+与旧主实验重叠条件结果一致。由于攻击 artifact 配置已经修正，ACM 攻击消融结果
+仍需重跑；clean 消融结果不受影响。DBLP 消融不在当前 140 次 suite 范围内。
 
 ### 8.1 目标
 
@@ -428,12 +430,11 @@ ACM 140 次 DVCL 组件消融已全部完成，所有条件包含 5 个训练种
 
 ### 9.0 实施状态
 
-ACM 主实验、Attack Average 和组件消融已汇总到
-`docs/acm-experiment-results.md`，DBLP 主实验和 Attack Average 已汇总到
-`docs/dblp-experiment-results.md`，跨数据集论文表已由
-`scripts/generate_paper_tables.py` 生成到 `docs/paper-experiment-tables.md`。
-当前总表已纳入 HAN 和 HeteroSAGE 暂定结果。基线干净提交复跑、显著性检验和
-最终发布归档仍待完成。
+DBLP 修正主实验和 Attack Average 已正式汇总到
+`docs/dblp-experiment-results.md`。跨数据集论文表已由
+`scripts/generate_paper_tables.py` 更新到 `docs/paper-experiment-tables.md`，其中 DBLP
+为正式结果，ACM 攻击主实验、基线和消融仍为暂定结果。ACM 修正复跑、显著性检验
+和最终发布归档仍待完成。
 
 ### 9.1 目标
 

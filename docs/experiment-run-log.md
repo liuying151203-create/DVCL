@@ -13,7 +13,7 @@
 | 训练 | 200 epochs，patience 100 |
 | 预期运行数 | 220 |
 | 结果指标 | Micro-F1 |
-| 当前状态 | 攻击 artifact 已验证，正式训练准备启动 |
+| 当前状态 | 220/220 完成，已汇总并写入正式 DBLP 结果表 |
 
 ### 攻击实现版本
 
@@ -35,4 +35,11 @@
 
 ### 运行结果
 
-正式实验完成后在此记录完整性、Micro-F1 表格、异常运行及处理结论。
+- 完整性：220 个 `status.json` 均为 `completed`，220 个 `metrics.json` 完整。
+- 审计：220 个 manifest 均为 `git_dirty=false`；clean/split 哈希分别唯一，攻击哈希
+  共 10 个，与正式 artifact 一一对应。
+- 汇总：`outputs/summaries/dblp_poisoning_main_v1`。
+- 正式结果：`docs/dblp-experiment-results.md`。
+- 分片退出码：HAN、HeteroSAGE、HSeCo、DVCL 均为 0，无失败重跑。
+- 异常观察：HAN 在 HetePRBCD 25% 下方差较大；HetePRBCD 各扰动率对训练节点
+  高度集中，均已在结果分析中披露。
