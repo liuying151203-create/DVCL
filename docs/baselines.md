@@ -1,7 +1,7 @@
 # 统一协议基线
 
-> 协议审计状态：HAN/HeteroSAGE 的修正 PRBCD/HetePRBCD 正式矩阵已经完成；新增
-> RoHe、HeteroGuard、FastRoHGCN 与 OpenHGNN 基线正式矩阵待运行。
+> 协议审计状态：HAN/HeteroSAGE 及 RoHe/HeteroGuard/FastRoHGCN 的正式矩阵已经
+> 完成；OpenHGNN 基线正式矩阵待运行。
 
 ## 已接入模型
 
@@ -139,6 +139,9 @@ Attack Average 包含全部 10 个攻击条件，不包含 clean。
 RoHe、HeteroGuard 和 FastRo-HGCN 已接入统一原生协议，并明确标记为独立复现；在
 无法证明源码、预处理和协议逐项一致前，不标记为官方等效实现。正式 poisoning、RND
 和 HG Baseline target evasion 矩阵及运行顺序见 `docs/experiment-expansion.md`。
+
+三种鲁棒基线的 ACM/DBLP poisoning 正式矩阵已完成 330/330 次，Micro-F1 结果和分析
+见 `docs/robust-baseline-results.md`。
 
 HGT、MAGNN、HeCo 和 SimpleHGN 的 ACM/DBLP poisoning suite 为
 `configs/protocols/openhgnn_baselines_poisoning_v1.yaml`，共 440 次正式运行。
