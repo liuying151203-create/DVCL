@@ -3,6 +3,7 @@ data/processed/
 data/splits/
 data/attacks/
 data/target_attacks/
+data/attack_diagnostics/
 outputs/
 checkpoints/
 *.pt
