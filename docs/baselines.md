@@ -1,7 +1,7 @@
 # 统一协议基线
 
 > 协议审计状态：HAN/HeteroSAGE 及 RoHe/HeteroGuard/FastRoHGCN 的正式矩阵已经
-> 完成；OpenHGNN 基线正式矩阵待运行。
+> 完成；OpenHGNN 基线正式矩阵也已完成并通过完整性审计。
 
 ## 已接入模型
 
@@ -144,4 +144,5 @@ RoHe、HeteroGuard 和 FastRo-HGCN 已接入统一原生协议，并明确标记
 见 `docs/robust-baseline-results.md`。
 
 HGT、MAGNN、HeCo 和 SimpleHGN 的 ACM/DBLP poisoning suite 为
-`configs/protocols/openhgnn_baselines_poisoning_v1.yaml`，共 440 次正式运行。
+`configs/protocols/openhgnn_baselines_poisoning_v1.yaml`，440/440 次正式运行已完成；
+Micro-F1 结果见 `docs/openhgnn-baseline-results.md`。

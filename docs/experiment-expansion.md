@@ -17,7 +17,8 @@ ACM 与 DBLP 的 HAN、HeteroSAGE、HSeCo、DVCL 全局 poisoning 主实验已�
 
 七个新增基线均已通过真实 ACM clean 单 epoch Runner smoke；HGT 与 MAGNN 还通过了
 单目标 evasion Runner smoke。OpenHGNN 模型在运行时校验版本与官方源码 SHA-256。
-正式扩展实验尚未运行，不能把 smoke 指标写入论文表。
+RoHe、HeteroGuard、FastRoHGCN 与四个 OpenHGNN 通用基线的 poisoning 正式矩阵已经
+完成并通过完整性审计；HG Baseline target evasion、RND 和攻击因子矩阵仍待运行。
 
 MAGNN 使用官方每目标节点实例采样语义，固定每条元路径每节点 5 个实例；适配器修正
 0.4.1 中层间输出未传递以及 inter-metapath attention 丢失梯度/设备的执行缺陷，并在
