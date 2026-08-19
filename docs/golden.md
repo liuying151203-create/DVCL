@@ -20,10 +20,20 @@ DGL 图和张量，模型、损失、优化、早停及指标计算仍执行相�
 
 ## 当前状态
 
-截至 2026-08-04，`outputs/runs/model_golden/` 和
-`outputs/equivalence/model_golden/` 下没有运行或比较报告，因此本轮完成的是
-HAN/HeteroSAGE 基线实验，不是 13 条 Golden 对照。当前工作区仍为 dirty，严格
-Golden 默认会拒绝启动；提交后需按下述命令执行。
+截至 2026-08-20，13 条 GPU Golden 对照全部通过，容差为 0。参考仓库提交为
+`1ebab2c`，当前仓库提交为 `85ede0d`；两仓库在运行时均为 clean。各条件的验证
+Micro-F1 轨迹最大差异和最终 Micro-F1 差异均为 0。
+
+| Model | Dataset | Condition | Epochs compared | Result |
+|---|---|---|---:|---|
+| HSeCo | ACM | Clean | 111 | Pass |
+| HSeCo | ACM | PRBCD 5% / 25% | 200 / 187 | Pass |
+| HSeCo | ACM | HetePRBCD 5% / 25% | 118 / 150 | Pass |
+| HSeCo | DBLP | Clean | 200 | Pass |
+| HSeCo | DBLP | PRBCD 15% / HetePRBCD 15% | 114 / 110 | Pass |
+| DVCL | ACM | Clean | 118 | Pass |
+| DVCL | ACM | PRBCD 5% / HetePRBCD 5% | 120 / 120 | Pass |
+| DVCL | DBLP | Clean / HetePRBCD 15% | 120 / 200 | Pass |
 
 ## 执行
 
@@ -32,7 +42,7 @@ Golden 默认会拒绝启动；提交后需按下述命令执行。
 ```bash
 source scripts/activate_gpu_env.sh
 python scripts/run_golden_suite.py --reference-root ../HSeCo --dry-run
-python scripts/run_golden_suite.py --reference-root ../HSeCo --continue-on-error
+python scripts/run_golden_suite.py --reference-root ../HSeCo --continue-on-error --force
 ```
 
 `DVCL_PRIVATE_HSECO_ROOT` 可替代 `--reference-root`。仅调试时才允许使用

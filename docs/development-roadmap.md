@@ -139,19 +139,17 @@ Artifact 层已完成：
 ### 2.6 当前完成度与剩余工作
 
 - GPU 环境、张量 smoke 和 ACM 单 epoch GPU Runner 已验收；
-- HSeCo 攻击场景模型 golden 尚未完成；
-- DVCL 模型 golden 尚未完成；
-- 13 条 HSeCo/DVCL Golden 首批矩阵已配置并通过 dry-run，正式 GPU 报告待生成；
+- HSeCo/DVCL 的 13 条 clean 与攻击场景 GPU Golden 已全部严格零差异通过；
 - ACM 和 DBLP 的修正主实验各 220 次，共 440 次，已经完成；
 - ACM 修正消融实验 140 次已经完成；
 - ACM、DBLP 独立结果表和双数据集论文总表已经生成；
 - HAN、HeteroSAGE 已进入统一原生协议，跨 ACM/DBLP 的 220 次基线运行已在
   干净提交上完成并汇总；
 - RoHe、HeteroGuard、FastRoHGCN 和 HG Baseline 目标逃逸已经进入统一原生协议，
-  正式扩展矩阵待运行；AMiner loader 与三套正式 suite 已完成，但同版原始图文件仍缺失。
+  poisoning、RND 与目标逃逸正式扩展矩阵均已完成；AMiner loader 与三套正式 suite
+  已完成，但同版原始图文件仍缺失。
 - 初版 OpenHGNN 规划中的 HGT、MAGNN、HeCo、SimpleHGN 已使用固定官方修订接入，
-  通过真实 ACM clean 单 epoch Runner smoke；正式扩展矩阵待 GPU 运行。HGSL 是预留
-  映射，不属于初版正式清单。
+  poisoning、RND 与目标逃逸正式矩阵均已完成。HGSL 是预留映射，不属于初版正式清单。
 
 ## 3. 执行原则
 
@@ -272,7 +270,7 @@ Torch Geometric 2.5.3
 - DBLP HSeCo clean、train seed 1、同 V100 环境已达到 200 epochs 严格零差异；
 - 新增 13 条配置驱动 Golden 矩阵、双仓库提交审计、输入哈希、脏仓库保护和
   单条件/汇总报告；
-- 13 条 reference/current 命令已通过 dry-run，正式 GPU 对照仍待执行。
+- 13 条 reference/current GPU 对照全部通过，验证轨迹和最终指标差异均为 0。
 
 ### 6.1 目标
 
