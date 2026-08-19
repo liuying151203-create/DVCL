@@ -35,6 +35,7 @@ def test_reference_command_uses_frozen_attack_artifact():
     command = build_reference_command(
         spec, Path("reference"), "python", inputs, Path("metrics.log")
     )
+    assert command[command.index("--entrypoint") + 1] == "our_global.py"
     assert command[command.index("--seed") + 1] == "1"
     assert command[command.index("--attack_artifact_path") + 1] == str(inputs["attack"])
     assert command[command.index("--neg_noise_rate") + 1] == "0.01"

@@ -124,9 +124,12 @@ def build_reference_command(
         "heteprbcd": "HetePRBCD",
     }[spec.attack.name]
     rate = float(spec.attack.rate)
+    wrapper = Path(__file__).resolve().parents[2] / "scripts" / "run_legacy_reference.py"
     command = [
         python_bin,
-        str(Path(reference_root) / entrypoint),
+        str(wrapper),
+        "--reference-root", str(Path(reference_root)),
+        "--entrypoint", entrypoint,
         "--use_artifacts",
         "--dataname", spec.dataset,
         "--atk_name", attack_name,

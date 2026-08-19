@@ -15,6 +15,8 @@ Golden 对照用于验证相邻旧 HSeCo 仓库与当前原生实现是否在相
 
 每个条件的 reference 和 current 读取完全相同的 clean、split 和 attack 文件。
 配置强制 `legacy_checkpoint_semantics=true`，并默认要求两个仓库均为干净状态。
+参考侧由 `scripts/run_legacy_reference.py` 仅将原生字典 artifact 解码为旧入口所需的
+DGL 图和张量，模型、损失、优化、早停及指标计算仍执行相邻 HSeCo 仓库代码。
 
 ## 当前状态
 
