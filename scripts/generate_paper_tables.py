@@ -42,6 +42,18 @@ def parse_args():
             ROOT / "outputs" / "summaries" / "acm_poisoning_ablation_v1" / "runs.csv"
         ),
     )
+    parser.add_argument(
+        "--robust-runs",
+        default=str(
+            ROOT / "outputs" / "summaries" / "robust_baselines_poisoning_v1" / "runs.csv"
+        ),
+    )
+    parser.add_argument(
+        "--openhgnn-runs",
+        default=str(
+            ROOT / "outputs" / "summaries" / "openhgnn_baselines_poisoning_v1" / "runs.csv"
+        ),
+    )
     parser.add_argument("--check", action="store_true")
     return parser.parse_args()
 
@@ -81,7 +93,16 @@ def main() -> int:
         if row["model"] in {"han", "heterosage"}
     )
     baseline_audit = audit_manifests(baseline_rows)
-    rendered = render_paper_tables(rows, baseline_rows, baseline_audit)
+    extended_rows = [
+        *load_run_rows(Path(args.robust_runs)),
+        *load_run_rows(Path(args.openhgnn_runs)),
+    ]
+    rendered = render_paper_tables(
+        rows,
+        baseline_rows,
+        baseline_audit,
+        extended_rows=extended_rows,
+    )
     output = Path(args.output)
     if args.check:
         if not output.is_file() or output.read_text(encoding="utf-8") != rendered:

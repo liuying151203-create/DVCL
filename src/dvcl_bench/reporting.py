@@ -13,6 +13,29 @@ from typing import Dict, Iterable, List, Mapping, Sequence, Tuple
 MAIN_DATASETS = ("acm", "dblp")
 MAIN_MODELS = ("hseco", "dvcl")
 BASELINE_MODELS = ("han", "heterosage")
+EXTENDED_MODELS = (
+    "rohe",
+    "heteroguard",
+    "fastrohgcn",
+    "hgt",
+    "magnn",
+    "heco",
+    "simplehgn",
+)
+ALL_MODELS = (*BASELINE_MODELS, *EXTENDED_MODELS, *MAIN_MODELS)
+MODEL_LABELS = {
+    "han": "HAN",
+    "heterosage": "HeteroSAGE",
+    "rohe": "RoHe",
+    "heteroguard": "HeteroGuard",
+    "fastrohgcn": "FastRoHGCN",
+    "hgt": "HGT",
+    "magnn": "MAGNN",
+    "heco": "HeCo",
+    "simplehgn": "SimpleHGN",
+    "hseco": "HSeCo",
+    "dvcl": "DVCL",
+}
 MAIN_CONDITIONS = (
     ("clean", 0.0),
     ("prbcd", 5.0),
@@ -137,6 +160,7 @@ def render_paper_tables(
     rows: Sequence[Mapping[str, object]],
     baseline_rows: Sequence[Mapping[str, object]],
     baseline_audit: Mapping[str, object] = None,
+    extended_rows: Sequence[Mapping[str, object]] = (),
     train_seeds: Sequence[int] = (1, 2, 3, 4, 5),
 ) -> str:
     main = [
@@ -168,6 +192,21 @@ def render_paper_tables(
         )
         validate_matrix(baselines, baseline_identities, train_seeds)
 
+    extended = [
+        row for row in extended_rows
+        if row["dataset"] in MAIN_DATASETS
+        and row["model"] in EXTENDED_MODELS
+        and row["variant"] == "default"
+    ]
+    if extended:
+        extended_identities = (
+            (dataset, model, attack, rate)
+            for dataset in MAIN_DATASETS
+            for model in EXTENDED_MODELS
+            for attack, rate in MAIN_CONDITIONS
+        )
+        validate_matrix(extended, extended_identities, train_seeds)
+
     ablation = [
         row for row in rows
         if row["dataset"] == "acm"
@@ -180,10 +219,8 @@ def render_paper_tables(
         "# 跨数据集论文实验表",
         "",
         "本文档由 `scripts/generate_paper_tables.py` 从逐次实验结果自动生成。主实验",
-        "包含 ACM 和 DBLP 的 220 次 HSeCo/DVCL 运行、220 次 HAN/HeteroSAGE",
-        "运行；消融包含 ACM 的 140 次运行。所有结果均为 5 个训练种子的均值",
-        "± 样本标准差，单位为百分数。Accuracy 与",
-        "Micro-F1 数值相同，因此统一记为 `Accuracy / Micro-F1`。",
+        "包含 ACM 和 DBLP 的 11 个模型 poisoning 结果；消融包含 ACM 的 140 次运行。",
+        "所有结果均为 5 个训练种子的 Micro-F1 均值 ± 样本标准差，单位为百分数。",
         "",
         "> 协议审计状态：`acm_poisoning_main_v1`、`dblp_poisoning_main_v1`",
         "> 和 `acm_poisoning_ablation_v1` 均已完成；共 580 次运行，全部来自干净提交。",
@@ -222,41 +259,61 @@ def render_paper_tables(
 
     lines.extend([
         "",
-        "## 2. 攻击平均",
+        "## 2. 全模型攻击平均",
         "",
         "先在每个训练种子内对攻击条件取平均，再计算种子间的均值和样本标准差。",
         "Attack Average 包含 PRBCD 和 HetePRBCD 的全部 10 个条件，不包含 clean。",
         "",
-        "| Dataset | Condition | HAN | HeteroSAGE | HSeCo | DVCL | \\(\\Delta\\) |",
-        "|---|---|---:|---:|---:|---:|---:|",
+        "| Dataset | Model | Clean | PRBCD Avg. | HetePRBCD Avg. | Attack Avg. |",
+        "|---|---|---:|---:|---:|---:|",
     ])
-    family_specs = (
-        ("Clean", ("clean",)),
-        ("PRBCD Average", ("prbcd",)),
-        ("HetePRBCD Average", ("heteprbcd",)),
-        ("Attack Average", ("prbcd", "heteprbcd")),
-    )
-    for dataset in MAIN_DATASETS:
-        for label, attacks in family_specs:
-            values = {}
-            for model in MAIN_MODELS:
+    if extended:
+        all_rows = [*baselines, *extended, *main]
+        family_attacks = (("clean",), ("prbcd",), ("heteprbcd",), ("prbcd", "heteprbcd"))
+        for dataset in MAIN_DATASETS:
+            model_values = {}
+            for model in ALL_MODELS:
                 selected = [
-                    row for row in main
+                    row for row in all_rows
                     if row["dataset"] == dataset and row["model"] == model
                 ]
-                values[model] = summarize_family(selected, attacks)
-            for model in BASELINE_MODELS:
-                selected = [
-                    row for row in baselines
-                    if row["dataset"] == dataset and row["model"] == model
-                ]
-                values[model] = summarize_family(selected, attacks)
-            cells = _best_cells(values, (*BASELINE_MODELS, *MAIN_MODELS))
-            delta = (values["dvcl"][0] - values["hseco"][0]) * 100
-            lines.append(
-                f"| {dataset.upper()} | {label} | " + " | ".join(cells)
-                + f" | {_format_delta(delta)} |"
-            )
+                model_values[model] = tuple(
+                    summarize_family(selected, attacks) for attacks in family_attacks
+                )
+            best = [max(model_values[model][index][0] for model in ALL_MODELS) for index in range(4)]
+            for model in ALL_MODELS:
+                cells = []
+                for index, value in enumerate(model_values[model]):
+                    cell = _format_metric(value)
+                    if abs(value[0] - best[index]) < 1e-12:
+                        cell = f"**{cell}**"
+                    cells.append(cell)
+                lines.append(
+                    f"| {dataset.upper()} | {MODEL_LABELS[model]} | "
+                    + " | ".join(cells) + " |"
+                )
+    else:
+        family_specs = (
+            ("Clean", ("clean",)),
+            ("PRBCD Average", ("prbcd",)),
+            ("HetePRBCD Average", ("heteprbcd",)),
+            ("Attack Average", ("prbcd", "heteprbcd")),
+        )
+        for dataset in MAIN_DATASETS:
+            for label, attacks in family_specs:
+                values = {}
+                for model in MAIN_MODELS:
+                    selected = [row for row in main if row["dataset"] == dataset and row["model"] == model]
+                    values[model] = summarize_family(selected, attacks)
+                for model in BASELINE_MODELS:
+                    selected = [row for row in baselines if row["dataset"] == dataset and row["model"] == model]
+                    values[model] = summarize_family(selected, attacks)
+                cells = _best_cells(values, (*BASELINE_MODELS, *MAIN_MODELS))
+                delta = (values["dvcl"][0] - values["hseco"][0]) * 100
+                lines.append(
+                    f"| {dataset.upper()} | {label} | " + " | ".join(cells)
+                    + f" | {_format_delta(delta)} |"
+                )
 
     lines.extend([
         "",
