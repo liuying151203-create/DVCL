@@ -25,6 +25,8 @@ evasion 后替代现有结果。
 
 因此，当前实现并非把旧 HSeCo 的**全局攻击协议**误写成 poisoning。首次审计时缺失的
 第二套 **HG Baseline/Atk_RoHe 目标 evasion 协议**现已完成工程实现。
+ACM/DBLP 的 11 模型正式矩阵已完成 330/330 次并通过完整性审计，Micro-F1 结果见
+`docs/target-evasion-results.md`。
 
 威胁模型判定正确不代表攻击生成参数已经符合论文。首次审计发现旧生成包装脚本没有
 传入 `--constrained`，HetePRBCD 也没有传入 `--biased`。这些旧结果现已被修正 artifact
