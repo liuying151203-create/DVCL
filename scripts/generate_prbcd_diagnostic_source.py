@@ -8,6 +8,11 @@ import numpy as np
 import torch
 
 ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from dvcl_bench.artifacts import file_sha256, load_split_artifact
 
 
 def parse_args():
@@ -21,6 +26,7 @@ def parse_args():
     parser.add_argument("--legacy-root", default=str(ROOT.parent / "HSeCo"))
     parser.add_argument("--heteroguard-root", default=str(ROOT.parent / "Hetero-Guard"))
     parser.add_argument("--data-root")
+    parser.add_argument("--split-path")
     parser.add_argument("--output", required=True)
     parser.add_argument("--cuda", type=int, default=0)
     parser.add_argument("--victim-epochs", type=int, default=200)
@@ -75,6 +81,13 @@ def main() -> int:
     data, num_classes, head_node = generator.build_hseco_hdata(
         values.dataname, values.data_root, values.fill_type
     )
+    split_path = (
+        Path(args.split_path).resolve()
+        if args.split_path
+        else ROOT / "data" / "splits" / args.dataset / "paper_seed_1.pt"
+    )
+    split = load_split_artifact(split_path)
+    _bind_frozen_split(data, head_node, split)
     budget, symmetric = generator.select_budget(
         data, values.dataname, values.constrained
     )
@@ -100,6 +113,8 @@ def main() -> int:
             "hseco": _git_revision(legacy_root),
             "heteroguard": _git_revision(heteroguard_root),
         },
+        "split_artifact": str(split_path),
+        "split_sha256": file_sha256(split_path),
         "dataset": values.dataname,
         "attack": values.atk_name,
         "rate": values.atk_rate,
@@ -127,6 +142,15 @@ def main() -> int:
     print(f"surrogate_before={before}")
     print(f"surrogate_after={after}")
     return 0
+
+
+def _bind_frozen_split(data, head_node, split):
+    store = data[head_node]
+    if len(store.y) != len(split.train_mask):
+        raise ValueError("Attack generator and frozen split node counts differ")
+    store.train_mask = split.train_mask.clone()
+    store.val_mask = split.val_mask.clone()
+    store.test_mask = split.test_mask.clone()
 
 
 def _run_heteprbcd(generator, args, data, classes, head, budget, symmetric, count):

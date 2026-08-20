@@ -146,8 +146,9 @@ Artifact 层已完成：
 - HAN、HeteroSAGE 已进入统一原生协议，跨 ACM/DBLP 的 220 次基线运行已在
   干净提交上完成并汇总；
 - RoHe、HeteroGuard、FastRoHGCN 和 HG Baseline 目标逃逸已经进入统一原生协议，
-  poisoning、RND 与目标逃逸正式扩展矩阵均已完成；AMiner loader 与三套正式 suite
-  已完成，但同版原始图文件仍缺失。
+  poisoning、RND 与目标逃逸正式扩展矩阵均已完成；AMiner loader、三套正式 suite、
+  HeCo 官方同版原始图、clean、固定 split、RND 和 HG Baseline artifact 已完成，
+  PRBCD/HetePRBCD artifact 正在做最终生成审计。
 - 初版 OpenHGNN 规划中的 HGT、MAGNN、HeCo、SimpleHGN 已使用固定官方修订接入，
   poisoning、RND 与目标逃逸正式矩阵均已完成。HGSL 是预留映射，不属于初版正式清单。
 

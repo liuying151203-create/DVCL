@@ -73,13 +73,23 @@ HAN/HSeCo/DVCL 自适应攻击。HSeCo/DVCL 含 SciPy 阈值净化和离散构�
 - 4 类 paper 标签；
 - 20%/10%/70% 的 paper protocol split。
 
-本机只有 AMiner split 和 HG Baseline 攻击记录，没有上述四个原始图文件。PyG 的 AMiner
-节点/关系定义不同，不能替代。拿到同版原始文件后依次执行 clean、split、HG Baseline、
-PRBCD/HetePRBCD 和十一模型实验，并在导入时核对旧攻击目标与新 clean 图。
+AMiner 原始图已从 HeCo 官方仓库固定修订
+`20e8ca2042838877b2c815279920218b6bbea1db` 获取。`labels.npy` 与旧 HSeCo
+`data_split_aminer_cpu.pkl` 内嵌标签逐元素一致；原始文件、转换文件和数据统计的 SHA-256
+记录在 `data/aminer/source_manifest.json`。PyG 的同名 AMiner 节点/关系定义不同，不能替代。
+
+当前 clean、旧 HSeCo 固定 split、RND 和 HG Baseline artifact 已生成。PRBCD/HetePRBCD
+使用同一 clean 与固定 split 生成，并在导入正式路径前执行预算、边界、对称性和训练集变化
+集中度审计。
 
 ```bash
+python scripts/prepare_aminer_source.py \
+  --source-root PATH_TO_HECO/AMiner \
+  --source-commit 20e8ca2042838877b2c815279920218b6bbea1db
 python scripts/prepare_dataset.py --dataset aminer
-python scripts/generate_split.py --dataset aminer --seed 1 --protocol paper
+python scripts/generate_split.py \
+  --dataset aminer --seed 1 --protocol paper \
+  --mode import --source-file PATH_TO_HSECO/data_split_aminer_cpu.pkl
 python scripts/prepare_hg_baseline_artifacts.py \
   --dataset aminer \
   --source-root PATH_TO_HG_BASELINE_SOURCES

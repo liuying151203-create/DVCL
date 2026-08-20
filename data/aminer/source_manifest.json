@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "dataset": "aminer",
+  "source": {
+    "url": "https://github.com/liun-online/HeCo.git",
+    "commit": "20e8ca2042838877b2c815279920218b6bbea1db"
+  },
+  "source_files": {
+    "pa.txt": "6e644c162db67840a414483890fe052fafa4deb4a3c5fa5a31e9bf7d87236885",
+    "pr.txt": "04238431ee02107b88883b689c9920d77a5a718aca39b85cf7aa77f77aad1e5f",
+    "labels.npy": "51a0500d6f74ee8745fc2d0f85c38dcdba064878980b890d5a347f29d68b531d",
+    "pos.npz": "90d51988c0b086e04bcd399efda5779c80cded0a9b39ed068cb85e623ea8db00"
+  },
+  "outputs": {
+    "pa.npz": "c36ee60cd8b6b102c21489a4aefd87dfac96c75f576bdb820f7840d7aae09d72",
+    "pr.npz": "2e5d24d7b75fd4f41ea4b03317daa15b09aea5caee863fde33c70082f4dab043",
+    "labels.npy": "51a0500d6f74ee8745fc2d0f85c38dcdba064878980b890d5a347f29d68b531d",
+    "pos.npz": "90d51988c0b086e04bcd399efda5779c80cded0a9b39ed068cb85e623ea8db00"
+  },
+  "stats": {
+    "paper_nodes": 6564,
+    "author_nodes": 13329,
+    "research_nodes": 35890,
+    "pa_edges": 18007,
+    "pr_edges": 58831,
+    "position_nonzeros": 67730,
+    "label_counts": {
+      "0": 1333,
+      "1": 1114,
+      "2": 526,
+      "3": 3591
+    }
+  }
+}
