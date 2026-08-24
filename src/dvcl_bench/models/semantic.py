@@ -97,6 +97,7 @@ def transition_edges(
     features: Tensor,
     adjs: Mapping[str, sp.spmatrix],
     meta_paths: Iterable[Iterable[str]],
+    similarity: Tensor = None,
 ):
     normalized = {}
     for name, value in adjs.items():
@@ -104,7 +105,7 @@ def transition_edges(
         degree = np.asarray(value.sum(axis=1)).reshape(-1)
         degree = np.where(degree > 0, degree, 1)
         normalized[name] = sp.diags(1.0 / degree).dot(value)
-    similarity = torch.mm(features.detach().cpu(), features.detach().cpu().t())
+    similarity = feature_similarity(features) if similarity is None else similarity
     result = []
     for path in meta_paths:
         names = list(path)
@@ -122,6 +123,11 @@ def transition_edges(
         weights = inverse[edges[0]] * weights * inverse[edges[1]]
         result.append((edges.to(features.device), weights.to(features.device), features.shape[0]))
     return result
+
+
+def feature_similarity(features: Tensor) -> Tensor:
+    values = features.detach().cpu()
+    return torch.mm(values, values.t())
 
 
 def purified_graphs(transitions, thresholds):

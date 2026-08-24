@@ -29,6 +29,7 @@ from .models.dvcl import (
 from .models.semantic import (
     NodeLevelAggregator,
     SemanticHAN,
+    feature_similarity,
     perturb_matrix,
     purified_graphs,
     semantic_graph,
@@ -435,7 +436,10 @@ def train_hseco(
     rng = np.random.RandomState(train_seed)
     target = _device(device)
     features, labels, masks = _inputs(clean, split, target)
-    transitions = transition_edges(features, _selected_adjs(clean, attack), clean.meta_paths)
+    similarity = feature_similarity(features)
+    transitions = transition_edges(
+        features, _selected_adjs(clean, attack), clean.meta_paths, similarity
+    )
     views = purified_graphs(transitions, config.thresholds)
     semantic = SemanticHAN(
         len(clean.meta_paths), features.shape[1], config.hidden_dim,
@@ -528,7 +532,9 @@ def train_hseco(
     )
     if _is_target_evasion(attack):
         def target_forward(adjs, record):
-            attacked_transitions = transition_edges(features, adjs, clean.meta_paths)
+            attacked_transitions = transition_edges(
+                features, adjs, clean.meta_paths, similarity
+            )
             attacked_graph = dgl.from_scipy(semantic_graph(
                 attacked_transitions, last_attention.to(target), config.global_threshold
             )).to(target)
@@ -557,7 +563,10 @@ def train_dvcl(
     set_random_seed(train_seed)
     target = _device(device)
     features, labels, masks = _inputs(clean, split, target)
-    transitions = transition_edges(features, _selected_adjs(clean, attack), clean.meta_paths)
+    similarity = feature_similarity(features)
+    transitions = transition_edges(
+        features, _selected_adjs(clean, attack), clean.meta_paths, similarity
+    )
     views = purified_graphs(transitions, config.thresholds)
     feature_graph = build_feature_knn_graph(features, config.knn_k, config.knn_mode)
     semantic = SemanticHAN(
@@ -657,7 +666,9 @@ def train_dvcl(
     target_forward = None
     if _is_target_evasion(attack):
         def target_forward(adjs, record):
-            attacked_transitions = transition_edges(features, adjs, clean.meta_paths)
+            attacked_transitions = transition_edges(
+                features, adjs, clean.meta_paths, similarity
+            )
             attacked_graph = dgl.from_scipy(semantic_graph(
                 attacked_transitions, last_attention.to(target), config.global_threshold
             )).to(target)
