@@ -147,12 +147,15 @@ Artifact 层已完成：
   干净提交上完成并汇总；
 - RoHe、HeteroGuard、FastRoHGCN 和 HG Baseline 目标逃逸已经进入统一原生协议，
   poisoning、RND 与目标逃逸正式扩展矩阵均已完成；AMiner loader、三套正式 suite、
-  HeCo 官方同版原始图、clean、固定 split、RND 和 HG Baseline artifact 已完成，
-  PRBCD/HetePRBCD artifact 正在做最终生成审计。
+  HeCo 官方同版原始图、clean、固定 split、RND、HG Baseline、PRBCD 和
+  HetePRBCD artifact 均已完成并通过审计。
 - 初版 OpenHGNN 规划中的 HGT、MAGNN、HeCo、SimpleHGN 已使用固定官方修订接入，
   poisoning、RND 与目标逃逸正式矩阵均已完成。HGSL 是预留映射，不属于初版正式清单。
-- ACM/DBLP 多 attack seed 复验 suite 与 DVCL 白盒 score-based 自适应目标逃逸已完成工程
-  接入；自适应 run 会保存 victim checkpoint 哈希和逐目标查询 artifact，正式矩阵待运行。
+- AMiner 11 模型 poisoning、RND 和目标逃逸共 1045/1045 次完成；ACM/DBLP 多
+  attack seed 复验 720/720 次完成；DVCL 白盒 score-based 自适应目标逃逸
+  30/30 次完成。三组矩阵均零失败。
+- 显著性检验、下降幅度、平均排名、最终结果文档和 PNG/PDF 论文图已生成；最终
+  冻结器已完成预检，待本轮代码提交后生成 `publication_ready=true` 的发布清单。
 
 ## 3. 执行原则
 
@@ -439,9 +442,10 @@ DVCL：
 
 ### 9.0 实施状态
 
-ACM、DBLP 修正主实验和 ACM 修正消融已经正式汇总到独立结果文档。跨数据集论文表
-已由 `scripts/generate_paper_tables.py` 更新到 `docs/paper-experiment-tables.md`，580 次
-运行全部来自干净提交。显著性检验和最终发布归档仍待完成。
+ACM、DBLP、AMiner、迁移目标逃逸和 DVCL 自适应目标逃逸均已正式汇总。多攻击
+种子结果采用配对双侧 Wilcoxon 检验和 Holm 校正，并生成下降幅度、平均排名、
+最终结果文档与 PNG/PDF 图。`scripts/freeze_reproducibility.py` 已对 8 套协议、282 个
+artifact、环境和结果集合完成预冻结审计；正式发布锁仅待本轮代码提交后重新执行。
 
 ### 9.1 目标
 
@@ -602,3 +606,6 @@ python scripts/summarize_results.py
 - 所有结果均可追溯到配置、Git commit、环境和输入哈希；
 - README、模型说明、开发路线和复现命令保持同步；
 - 原始 outputs 和环境快照完成独立归档。
+
+截至 2026-08-24，除“在最终干净提交上重新生成发布冻结清单”外，上述实验与工程
+条件均已满足。

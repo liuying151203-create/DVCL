@@ -157,6 +157,15 @@ python scripts/generate_paper_tables.py
 python scripts/generate_paper_tables.py --check
 ```
 
+生成多攻击种子统计、显著性检验、下降幅度、平均排名和最终论文图表：
+
+```powershell
+python scripts/analyze_paper_results.py
+```
+
+最终表格只报告 Micro-F1。完整结果见 `docs/final-experiment-results.md`、
+`docs/aminer-experiment-results.md` 和 `docs/target-evasion-results.md`。
+
 ## HSeCo 等效实现
 
 HSeCo 实现参考论文和可获得源码中的数据处理、元路径转换、两级净化、对比损失、早停和 checkpoint 行为。论文复现协议可启用旧式 checkpoint 语义；统一主协议恢复完整语义模块和分类模块。详细说明见 `docs/hseco.md`。
@@ -176,3 +185,6 @@ HSeCo 实现参考论文和可获得源码中的数据处理、元路径转换�
 
 跨数据集主实验、攻击平均与 ACM 消融论文表见
 `docs/paper-experiment-tables.md`。
+
+最终环境、Git、协议、artifact 和结果哈希冻结流程见
+`docs/reproducibility.md`。

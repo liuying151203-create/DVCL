@@ -1,0 +1,28 @@
+protocol_configs:
+  - configs/protocols/acm_poisoning_main_v1.yaml
+  - configs/protocols/dblp_poisoning_main_v1.yaml
+  - configs/protocols/hg_baseline_target_evasion_v1.yaml
+  - configs/protocols/aminer_poisoning_main_v1.yaml
+  - configs/protocols/aminer_rnd_poisoning_v1.yaml
+  - configs/protocols/aminer_hg_baseline_target_evasion_v1.yaml
+  - configs/protocols/acm_dblp_attack_seed_recheck_v1.yaml
+  - configs/protocols/dvcl_adaptive_target_evasion_v1.yaml
+
+artifact_roots:
+  - data/processed/acm
+  - data/processed/dblp
+  - data/processed/aminer
+  - data/splits/acm
+  - data/splits/dblp
+  - data/splits/aminer
+  - data/attacks/acm
+  - data/attacks/dblp
+  - data/attacks/aminer
+
+analysis_paths:
+  - docs/final-experiment-results.md
+  - docs/acm-experiment-results.md
+  - docs/dblp-experiment-results.md
+  - docs/aminer-experiment-results.md
+  - docs/target-evasion-results.md
+  - docs/figures/paper
