@@ -151,6 +151,8 @@ Artifact 层已完成：
   PRBCD/HetePRBCD artifact 正在做最终生成审计。
 - 初版 OpenHGNN 规划中的 HGT、MAGNN、HeCo、SimpleHGN 已使用固定官方修订接入，
   poisoning、RND 与目标逃逸正式矩阵均已完成。HGSL 是预留映射，不属于初版正式清单。
+- ACM/DBLP 多 attack seed 复验 suite 与 DVCL 白盒 score-based 自适应目标逃逸已完成工程
+  接入；自适应 run 会保存 victim checkpoint 哈希和逐目标查询 artifact，正式矩阵待运行。
 
 ## 3. 执行原则
 

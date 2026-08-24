@@ -149,7 +149,9 @@ def command_for(
             attack["path_pattern"].format(
                 dataset=dataset, model=model, attack=attack["name"],
                 variant=attack.get("variant", "default"),
-                rate=f"{rate:g}", seed=attack_seed
+                rate=f"{rate:g}", seed=attack_seed,
+                split_seed=split_seed, attack_seed=attack_seed,
+                train_seed=train_seed,
             ),
         ])
     if attack.get("adaptive", False):

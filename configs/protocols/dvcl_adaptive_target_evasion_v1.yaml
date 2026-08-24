@@ -1,0 +1,29 @@
+protocol: dvcl_adaptive_target_evasion_v1
+device: cuda:0
+
+datasets:
+  - acm
+  - dblp
+
+models:
+  - name: dvcl
+    backend: native
+    config_path: configs/models/dvcl.yaml
+
+split_name_pattern: paper_seed_{seed}
+
+attacks:
+  - name: dvcl_adaptive_query
+    rates: [1, 3, 5]
+    threat_model: evasion
+    scope: target
+    adaptive: true
+
+seeds:
+  split: [1]
+  attack: [1]
+  train: [1, 2, 3, 4, 5]
+
+training:
+  epochs: 200
+  patience: 100

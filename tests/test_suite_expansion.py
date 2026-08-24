@@ -103,6 +103,29 @@ def test_aminer_suite_sizes():
     assert len(list(RUN_SUITE.commands(rnd, "python", ROOT))) == 275
 
 
+def test_attack_seed_recheck_suite_size():
+    config = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" / "acm_dblp_attack_seed_recheck_v1.yaml"
+    )
+    commands = list(RUN_SUITE.commands(config, "python", ROOT))
+    assert len(commands) == 720
+    assert {
+        command[command.index("--attack-seed") + 1] for command in commands
+    } == {"1", "2", "3"}
+
+
+def test_dvcl_adaptive_suite_size_and_semantics():
+    config = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" / "dvcl_adaptive_target_evasion_v1.yaml"
+    )
+    commands = list(RUN_SUITE.commands(config, "python", ROOT))
+    assert len(commands) == 30
+    assert all(command[command.index("--model") + 1] == "dvcl" for command in commands)
+    assert all(command[command.index("--threat-model") + 1] == "evasion" for command in commands)
+    assert all(command[command.index("--scope") + 1] == "target" for command in commands)
+    assert all("--adaptive" in command for command in commands)
+
+
 def test_model_selection_partitions_formal_suite():
     config = RUN_SUITE.load_config(
         ROOT / "configs" / "protocols" / "dblp_poisoning_main_v1.yaml"
@@ -160,3 +183,24 @@ def test_target_evasion_and_adaptive_flags_are_expanded():
     assert command[command.index("--scope") + 1] == "target"
     assert command[command.index("--attack-path") + 1] == "data/acm/han/hg_baseline_3.pt"
     assert "--adaptive" in command
+
+
+def test_attack_path_pattern_supports_all_seed_dimensions():
+    config = {
+        "protocol": "adaptive",
+        "datasets": ["acm"],
+        "models": [{"name": "dvcl", "backend": "native"}],
+        "attacks": [{
+            "name": "query",
+            "rates": [5],
+            "path_pattern": (
+                "data/{dataset}/{model}/split_{split_seed}/attack_{attack_seed}/"
+                "train_{train_seed}.pt"
+            ),
+        }],
+        "seeds": {"split": [1], "attack": [2], "train": [3]},
+    }
+    command = next(RUN_SUITE.commands(config, "python", ROOT))
+    assert command[command.index("--attack-path") + 1] == (
+        "data/acm/dvcl/split_1/attack_2/train_3.pt"
+    )

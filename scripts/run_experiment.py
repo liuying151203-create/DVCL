@@ -180,6 +180,12 @@ def run_frozen_model(spec, inputs, run_dir):
                 "Attack artifact semantics do not match the experiment spec: "
                 f"artifact={artifact_semantics}, requested={requested_semantics}"
             )
+        declared_victim = attack.provenance.get("victim_model")
+        if attack.adaptive and declared_victim != spec.model.name:
+            raise ValueError(
+                "Adaptive attack victim does not match the experiment model: "
+                f"artifact={declared_victim!r}, requested={spec.model.name!r}"
+            )
         report = verify_attack(clean, split, attack)
         save_json(report, run_dir / "attack_verification.json")
         for warning in report.get("warnings", []):

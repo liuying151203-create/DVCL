@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
 from typing import Mapping, Optional
 
@@ -9,9 +10,17 @@ import numpy as np
 import torch
 from torch import nn
 
-from .artifacts import AttackArtifact, CleanGraphArtifact, SplitArtifact
-from .attacks import apply_target_change
+from .adaptive import greedy_query_target_changes
+from .artifacts import (
+    AttackArtifact,
+    CleanGraphArtifact,
+    SplitArtifact,
+    file_sha256,
+    save_attack_artifact,
+)
+from .attacks import apply_target_change, build_attack_artifact, verify_attack
 from .environment import resolve_device
+from .manifest import save_json
 from .models.dvcl import (
     DualViewContrastiveDefense,
     build_feature_knn_graph,
@@ -647,7 +656,8 @@ def train_dvcl(
     }
     if model.last_gate_weight is not None:
         diagnostics["gate_mean"] = float(model.last_gate_weight.mean())
-    result = TrainingResult(metrics, history, stopper.best_epoch, stopped_epoch, diagnostics)
+    effective_attack = attack
+    target_forward = None
     if _is_target_evasion(attack):
         def target_forward(adjs, record):
             attacked_transitions = transition_edges(features, adjs, clean.meta_paths)
@@ -659,8 +669,76 @@ def train_dvcl(
             )).to(target)
             return model(features, attacked_graph, feature_graph)[0]
 
+    if _is_dvcl_adaptive_request(attack):
+        semantic.eval()
+        model.eval()
+        max_additions = int(attack.provenance.get("candidate_additions", 16))
+        max_deletions = int(attack.provenance.get("candidate_deletions", 16))
+        records, adaptive_diagnostics = greedy_query_target_changes(
+            clean=clean,
+            targets=attack.target_nodes.tolist(),
+            labels=labels,
+            clean_logits=test_logits,
+            forward_for_adjs=target_forward,
+            budget=int(attack.attack_rate),
+            seed=attack.seed,
+            max_additions=max_additions,
+            max_deletions=max_deletions,
+        )
+        checkpoint_sha256 = file_sha256(checkpoint_path)
+        effective_attack = build_attack_artifact(
+            clean=clean,
+            split=split,
+            attack_name=attack.attack_name,
+            attack_rate=attack.attack_rate,
+            seed=attack.seed,
+            perturbed=clean.hete_adjs,
+            target_nodes=attack.target_nodes,
+            source=str(Path(checkpoint_path).resolve()),
+            source_sha256=checkpoint_sha256,
+            provenance={
+                **attack.provenance,
+                "request_only": False,
+                "generator": "dvcl_bench.adaptive.greedy_query_target_changes",
+                "victim_model": "dvcl",
+                "victim_train_seed": int(train_seed),
+                "victim_model_config": asdict(config),
+                "victim_checkpoint": str(Path(checkpoint_path).resolve()),
+                "victim_checkpoint_sha256": checkpoint_sha256,
+                **adaptive_diagnostics,
+            },
+            threat_model="evasion",
+            scope="target",
+            adaptive=True,
+            target_changes=records,
+        )
+        effective_attack.stats["_target"] = _target_change_stats(
+            records, effective_attack.attack_rate
+        )
+        adaptive_path = Path(checkpoint_path).with_name("adaptive_attack.pt")
+        save_attack_artifact(effective_attack, adaptive_path)
+        adaptive_report = verify_attack(clean, split, effective_attack)
+        save_json(
+            adaptive_report,
+            Path(checkpoint_path).with_name("adaptive_attack_verification.json"),
+        )
+        if not adaptive_report["ok"]:
+            raise RuntimeError(
+                "Generated adaptive attack failed verification: "
+                + "; ".join(adaptive_report["issues"])
+            )
+        diagnostics["adaptive_attack"] = {
+            **adaptive_diagnostics,
+            "path": str(adaptive_path),
+            "sha256": file_sha256(adaptive_path),
+            "victim_checkpoint_sha256": checkpoint_sha256,
+        }
+
+    result = TrainingResult(metrics, history, stopper.best_epoch, stopped_epoch, diagnostics)
+    if _is_target_evasion(effective_attack):
+
         _evaluate_target_evasion(
-            result, clean, attack, labels, test_logits, target_forward
+            result, clean, effective_attack, labels, test_logits, target_forward
         )
     return result
 
@@ -737,6 +815,31 @@ def _is_target_evasion(attack: Optional[AttackArtifact]) -> bool:
         and attack.threat_model == "evasion"
         and attack.scope == "target"
     )
+
+
+def _is_dvcl_adaptive_request(attack: Optional[AttackArtifact]) -> bool:
+    return bool(
+        _is_target_evasion(attack)
+        and attack.adaptive
+        and attack.attack_name == "dvcl_adaptive_query"
+        and attack.provenance.get("request_only") is True
+        and attack.target_nodes is not None
+    )
+
+
+def _target_change_stats(records, budget):
+    counts = [
+        len(record.get("deleted", [])) + len(record.get("added", []))
+        for record in records
+    ]
+    return {
+        "targets": len(records),
+        "budget_per_target": int(budget),
+        "total_changes": int(sum(counts)),
+        "min_changes": int(min(counts, default=0)),
+        "max_changes": int(max(counts, default=0)),
+        "mean_changes": float(np.mean(counts)) if counts else 0.0,
+    }
 
 
 def _evaluate_target_evasion(

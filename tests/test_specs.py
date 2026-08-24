@@ -29,6 +29,16 @@ def test_hg_baseline_requires_target_evasion():
     assert value.threat_model == "evasion"
 
 
+def test_dvcl_query_requires_adaptive_target_evasion():
+    with pytest.raises(ValueError, match="adaptive target evasion"):
+        AttackSpec(name="dvcl_adaptive_query", rate=1)
+    value = AttackSpec(
+        name="dvcl_adaptive_query", rate=1,
+        threat_model="evasion", scope="target", adaptive=True,
+    )
+    assert value.adaptive is True
+
+
 def test_openhgnn_models_use_strict_allowlist():
     assert ModelSpec("hgt", "openhgnn").name == "hgt"
     with pytest.raises(ValueError, match="OpenHGNN backend supports only"):

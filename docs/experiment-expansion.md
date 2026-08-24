@@ -42,6 +42,10 @@ metrics diagnostics 中记录。HeCo 保留对比预训练加线性分类器两�
 所有正式条件使用 split seed 1、attack seed 1 和 train seed 1–5。目标逃逸与全局
 poisoning 分别汇总，禁止计算到同一个 Attack Average。
 
+关键条件复验使用 `acm_dblp_attack_seed_recheck_v1.yaml`：ACM/DBLP、论文主表四模型、
+PRBCD/HetePRBCD、5%/15%/25%，交叉 attack seed 1–3 与 train seed 1–5，共 720 次。
+该协议用于分离攻击生成随机性和训练随机性，不替换十一模型单 attack seed 主表。
+
 ACM/DBLP 待运行共 1890 次；AMiner 数据就绪后再运行 1045 次。各 suite 可按模型
 分批执行并依靠 completed 状态续跑，但必须整套审计通过后才能进入论文表。
 
@@ -59,10 +63,14 @@ ACM/DBLP 待运行共 1890 次；AMiner 数据就绪后再运行 1045 次。各 
 `surrogate_before`、`surrogate_after` 和 `optimization_history`；
 `analyze_attack_effectiveness.py --strict-generation-diagnostics` 会阻断缺失这些字段的审计。
 
-`adaptive=true` 只允许 surrogate 与被评估 victim 的模型族和参数真正一致。当前外部生成器
-的 PRBCD surrogate 是 GCN，HetePRBCD surrogate 是 HeteroSAGE，不能把其产物改名为
-HAN/HSeCo/DVCL 自适应攻击。HSeCo/DVCL 含 SciPy 阈值净化和离散构图，后续需要 BPDA
-或可微替代算子；在该研究实现完成前，自适应结果不进入论文主表。
+`adaptive=true` 只允许攻击与被评估 victim 真正绑定。外部 PRBCD 的 GCN surrogate 和
+HetePRBCD 的 HeteroSAGE surrogate 仍属于迁移攻击，不能改名为 DVCL 自适应攻击。
+
+DVCL 自适应补充协议使用 `dvcl_adaptive_target_evasion_v1.yaml`。攻击在每个 train seed
+完成训练后，直接查询对应 checkpoint 的真实 DVCL 前向（包含 SciPy 阈值净化和离散构图），
+逐目标贪心最大化 `max_other_logit - true_logit`；每个 run 保存独立 attack artifact、
+checkpoint SHA-256、候选规模和查询次数。该方法是白盒 score-based query attack，不声明
+BPDA 或梯度可微性，结果与迁移 HG Baseline 分表报告。
 
 ## 4. AMiner
 
