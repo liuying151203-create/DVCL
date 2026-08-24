@@ -529,11 +529,8 @@ def train_hseco(
     if _is_target_evasion(attack):
         def target_forward(adjs, record):
             attacked_transitions = transition_edges(features, adjs, clean.meta_paths)
-            attacked_views = purified_graphs(attacked_transitions, config.thresholds)
-            semantic(features, attacked_views)
-            attacked_attention = semantic.semantic_weights()
             attacked_graph = dgl.from_scipy(semantic_graph(
-                attacked_transitions, attacked_attention, config.global_threshold
+                attacked_transitions, last_attention.to(target), config.global_threshold
             )).to(target)
             return node_model(features, attacked_graph)
 
@@ -661,13 +658,13 @@ def train_dvcl(
     if _is_target_evasion(attack):
         def target_forward(adjs, record):
             attacked_transitions = transition_edges(features, adjs, clean.meta_paths)
-            attacked_views = purified_graphs(attacked_transitions, config.thresholds)
-            semantic(features, attacked_views)
-            attacked_attention = semantic.semantic_weights()
             attacked_graph = dgl.from_scipy(semantic_graph(
-                attacked_transitions, attacked_attention, config.global_threshold
+                attacked_transitions, last_attention.to(target), config.global_threshold
             )).to(target)
-            return model(features, attacked_graph, feature_graph)[0]
+            topology = None
+            if config.view_mode in {"both", "both_nocl", "topo"}:
+                topology = model.topology_encoder(features, attacked_graph)
+            return model.classify(topology, feature)[0]
 
     if _is_dvcl_adaptive_request(attack):
         semantic.eval()

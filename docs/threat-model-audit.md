@@ -21,7 +21,8 @@ evasion 后替代现有结果。
 1. `our_global.py`、`hete_global.py` 和 `our_dvcl.py` 先加载扰动图，再训练模型，
    对应全局 poisoning；当前 PRBCD/HetePRBCD 主实验复现的是这套语义。
 2. `our_local.py` 和 `hete_local.py` 先在 clean 图上训练并恢复 checkpoint，再逐目标
-   替换测试图、仅执行前向推理，对应 Atk_RoHe 目标逃逸攻击。
+   替换测试图、固定训练结束时的语义注意力并仅执行前向推理，对应 Atk_RoHe 目标
+   逃逸攻击。
 
 因此，当前实现并非把旧 HSeCo 的**全局攻击协议**误写成 poisoning。首次审计时缺失的
 第二套 **HG Baseline/Atk_RoHe 目标 evasion 协议**现已完成工程实现。
@@ -40,11 +41,10 @@ ACM/DBLP 的 11 模型正式矩阵已完成 330/330 次并通过完整性审计�
 |---|---|---|---|
 | PRBCD | Poisoning | 全局扰动率 5%–25% | 修正配置正式实验已完成 |
 | HetePRBCD | Poisoning | 全局扰动率 5%–25% | 修正配置正式实验已完成 |
-| HG Baseline | Evasion | 每个目标节点的扰动预算 $\Delta\in\{1,3,5\}$ | 已实现，正式矩阵待运行 |
+| HG Baseline | Evasion | 每个目标节点的扰动预算 $\Delta\in\{1,3,5\}$ | ACM/DBLP 已完成；AMiner 运行中 |
 
 HG Baseline 在 ACM 和 DBLP 上攻击 Paper–Author（P–A）边，在 AMiner 上攻击
-Paper–Reference（P–R）边。ACM/DBLP 的 P–A 目标逃逸 artifact 已准备完成；AMiner
-loader 已实现，但同版原始图文件仍缺失，因此其 P–R 实验尚不能运行。
+Paper–Reference（P–R）边。三套数据的目标逃逸 artifact 均已完成并通过验证。
 
 ## 3. 代码证据
 
@@ -84,8 +84,9 @@ artifact。
 结果文档。ACM 上下降较小可能来自模型对扰动图的重新适应、早停选择和 DVCL 的固定
 特征视图；这也不能据此推断 HG Baseline evasion 下的鲁棒性。
 
-现有正式结果中仍没有 `scope: target` 的完整矩阵。单目标 smoke 已证明逐目标 clean/
-attacked 指标链路可运行，但不能写入论文表格。
+ACM/DBLP 的 `scope: target` 十一模型矩阵已完成；AMiner 矩阵正在断点续跑。HSeCo/DVCL
+目标前向固定训练结束时的语义注意力，DVCL 同时复用不受结构扰动影响的 feature view，
+只重建被目标边修改影响的 topology view。
 
 ## 5. 复现 HG Baseline 的正确流程
 
