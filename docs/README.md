@@ -1,0 +1,46 @@
+# DVCL 文档导航
+
+本目录按“主结果—专项附录—协议审计—工程历史”分层。若不同文档的数字或结论表述不一致，按下列优先级解释。
+
+## 1. 必读入口
+
+1. `final-experiment-results.md`：唯一论文结果主入口，包含实验设置、主表、统计检验、消融、异常结果审计和结论边界。
+2. `reproducibility.md`：环境、Git、协议、artifact 与结果哈希冻结及复现命令。
+3. `../README.md`：项目安装、数据准备和命令入口。
+
+## 2. 结果附录
+
+| 文档 | 内容 |
+|---|---|
+| `acm-experiment-results.md` | ACM 单攻击种子主实验与消融明细 |
+| `dblp-experiment-results.md` | DBLP 单攻击种子主实验明细 |
+| `aminer-experiment-results.md` | AMiner 十一模型完整结果与攻击有效性审计 |
+| `target-evasion-results.md` | ACM、DBLP、AMiner 目标逃逸逐模型结果 |
+| `robust-baseline-results.md` | RoHe、HeteroGuard、FastRoHGCN |
+| `openhgnn-baseline-results.md` | HGT、MAGNN、HeCo、SimpleHGN |
+| `rnd-attack-results.md` | RND poisoning |
+| `attack-factorial-results.md` | 攻击机制因子实验 |
+| `paper-experiment-tables.md` | 旧版自动生成跨数据集表，仅用于追溯 |
+
+## 3. 协议与审计
+
+| 文档 | 内容 |
+|---|---|
+| `threat-model-audit.md` | Poisoning、迁移逃逸和模型自适应逃逸的协议边界 |
+| `attack-effectiveness-audit.md` | 攻击预算、关系变化和效果审计 |
+| `golden.md` | HSeCo golden 对照来源、范围和可审计性 |
+| `baselines.md` | 基线实现、后端和超参数来源 |
+| `hseco.md` | HSeCo 原生实现与 legacy checkpoint 语义 |
+| `environment.md` | Python、Torch、DGL 与 GPU 环境 |
+
+## 4. 工程历史
+
+`development-roadmap.md`、`experiment-expansion.md` 和 `experiment-run-log.md` 记录阶段性规划与执行过程，不作为当前实验完成度或论文结论依据。
+
+## 5. 口径规则
+
+- 指标仅使用 Micro-F1，论文主数字以 `final-experiment-results.md` 为准。
+- Poisoning、固定迁移逃逸和模型自适应逃逸分别成表，不计算跨威胁模型总平均。
+- 自动生成表优先于手工历史记录；生成入口为 `python scripts/analyze_paper_results.py`。
+- `final-experiment-results.html` 是本地导出副本，不是结果源；若与 Markdown 不一致，以 `final-experiment-results.md` 为准并重新导出。
+- “预算验证通过”只说明 artifact 结构正确，不代表攻击足够强；强度结论需同时查看替代模型下降、目标 ASR 和实际预算利用率。

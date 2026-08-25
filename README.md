@@ -150,7 +150,7 @@ python scripts/summarize_results.py
 
 结果写入 `outputs/summaries/`，包括单次结果、均值标准差和跨攻击条件平均值。
 
-从 `dvcl_main` 的 360 次主实验与消融运行生成论文总表：
+旧版 `dvcl_main` 的 360 次主实验与消融追溯表可通过以下命令生成；该表不再作为论文主入口：
 
 ```powershell
 python scripts/generate_paper_tables.py
@@ -163,8 +163,8 @@ python scripts/generate_paper_tables.py --check
 python scripts/analyze_paper_results.py
 ```
 
-最终表格只报告 Micro-F1。完整结果见 `docs/final-experiment-results.md`、
-`docs/aminer-experiment-results.md` 和 `docs/target-evasion-results.md`。
+最终表格只报告 Micro-F1。文档统一入口见 `docs/README.md`，论文主结果与结论以
+`docs/final-experiment-results.md` 为准。
 
 ## HSeCo 等效实现
 
@@ -173,18 +173,7 @@ HSeCo 实现参考论文和可获得源码中的数据处理、元路径转换�
 批量 Golden 对照使用 `configs/golden/hseco_dvcl.yaml`，执行和审计规则见
 `docs/golden.md`。
 
-## 后续开发路线
+## 文档与复现
 
-当前工程状态、golden 对照覆盖、正式环境建设、DBLP 产物准备、主实验和消融实验的分阶段计划见 `docs/development-roadmap.md`。
-
-已完成的 ACM 主实验、攻击平均、组件消融和结果完整性审计见
-`docs/acm-experiment-results.md`。
-
-已完成的 DBLP 主实验、攻击平均和结果分析见
-`docs/dblp-experiment-results.md`。
-
-跨数据集主实验、攻击平均与 ACM 消融论文表见
-`docs/paper-experiment-tables.md`。
-
-最终环境、Git、协议、artifact 和结果哈希冻结流程见
-`docs/reproducibility.md`。
+所有文档按主结果、专项附录、协议审计和工程历史分层，统一导航见 `docs/README.md`。
+最终环境、Git、协议、artifact 和结果哈希冻结流程见 `docs/reproducibility.md`。

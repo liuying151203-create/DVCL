@@ -1,5 +1,7 @@
 # ACM 实验结果
 
+> **专项附录。** 主结论与多攻击种子统计以 `docs/final-experiment-results.md` 为准。
+>
 > 协议审计状态：`acm_poisoning_main_v1` 已完成 220/220 次主实验，
 > `acm_poisoning_ablation_v1` 已完成 140/140 次消融实验。全部运行来自干净提交，
 > 修正后的 PRBCD/HetePRBCD artifact 均通过 provenance、预算和反向边验证。

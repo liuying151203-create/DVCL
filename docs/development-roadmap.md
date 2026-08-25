@@ -1,5 +1,7 @@
 # DVCL 后续开发与实验路线
 
+> **历史规划文档。** 当前完成度、主结果与下一步补充实验以 `docs/final-experiment-results.md` 和 `docs/README.md` 为准。
+
 ## 1. 文档目标
 
 本文档基于 2026-08-04 的仓库状态，说明当前工程、验证和正式实验进展及后续计划。重点是：
@@ -152,7 +154,7 @@ Artifact 层已完成：
 - 初版 OpenHGNN 规划中的 HGT、MAGNN、HeCo、SimpleHGN 已使用固定官方修订接入，
   poisoning、RND 与目标逃逸正式矩阵均已完成。HGSL 是预留映射，不属于初版正式清单。
 - AMiner 11 模型 poisoning、RND 和目标逃逸共 1045/1045 次完成；ACM/DBLP 多
-  attack seed 复验 720/720 次完成；DVCL 白盒 score-based 自适应目标逃逸
+  attack seed 复验 720/720 次完成；DVCL 有限候选、score-based 模型自适应目标逃逸
   30/30 次完成。三组矩阵均零失败。
 - 显著性检验、下降幅度、平均排名、最终结果文档和 PNG/PDF 论文图已生成；最终
   冻结器已完成预检，待本轮代码提交后生成 `publication_ready=true` 的发布清单。
@@ -444,7 +446,7 @@ DVCL：
 
 ACM、DBLP、AMiner、迁移目标逃逸和 DVCL 自适应目标逃逸均已正式汇总。多攻击
 种子结果采用配对双侧 Wilcoxon 检验和 Holm 校正，并生成下降幅度、平均排名、
-最终结果文档与 PNG/PDF 图。`scripts/freeze_reproducibility.py` 已对 8 套协议、282 个
+最终结果文档与 PNG/PDF 图。`scripts/freeze_reproducibility.py` 已扩展为对 12 套协议、282 个
 artifact、环境和结果集合完成预冻结审计；正式发布锁仅待本轮代码提交后重新执行。
 
 ### 9.1 目标

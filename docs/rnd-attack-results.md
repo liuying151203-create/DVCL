@@ -1,5 +1,7 @@
 # RND 随机扰动实验结果
 
+> **专项附录。** 统一主表与结论以 `docs/final-experiment-results.md` 为准。
+
 ## 实验设置
 
 - 数据集：ACM、DBLP；固定 split seed 1、attack seed 1，train seed 1–5。
@@ -46,4 +48,3 @@
 3. DBLP RND Average 中 FastRoHGCN、DVCL、HSeCo 分别为 86.72、86.21、85.75；
    三者明显优于其在优化 HetePRBCD 下的部分结果，说明优化攻击并非随机预算效应。
 4. RND 是全局 poisoning 对照，不与 HG Baseline target evasion 合并汇总。
-

@@ -1,5 +1,7 @@
 # 跨数据集论文实验表
 
+> **历史生成表。** 当前论文主表与统计结论以 `docs/final-experiment-results.md` 为准。
+
 本文档由 `scripts/generate_paper_tables.py` 从逐次实验结果自动生成。主实验
 包含 ACM 和 DBLP 的 11 个模型 poisoning 结果；消融包含 ACM 的 140 次运行。
 所有结果均为 5 个训练种子的 Micro-F1 均值 ± 样本标准差，单位为百分数。

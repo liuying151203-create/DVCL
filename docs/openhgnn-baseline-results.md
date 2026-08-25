@@ -1,5 +1,7 @@
 # OpenHGNN 通用基线实验结果
 
+> **专项附录。** 统一主表与结论以 `docs/final-experiment-results.md` 为准。
+
 ## 实验设置
 
 - 数据集：ACM、DBLP；固定 split seed 1、attack seed 1，train seed 1–5。
@@ -66,4 +68,3 @@
 3. DBLP HetePRBCD 对四个模型都造成显著下降，MAGNN、HeCo、SimpleHGN 在高扰动率下
    接近 24%–27%。该现象与此前 HAN 的 HetePRBCD 崩落方向一致，且攻击 artifact 已通过
    统一预算校验；后续应结合关系级变化与训练节点集中度解释，不应与 PRBCD 合并解读。
-

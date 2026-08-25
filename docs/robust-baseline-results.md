@@ -1,5 +1,7 @@
 # 鲁棒基线实验结果
 
+> **专项附录。** 统一主表与结论以 `docs/final-experiment-results.md` 为准。
+
 ## 实验设置
 
 - 数据集：ACM、DBLP；固定 split seed 1、attack seed 1，train seed 1–5。
@@ -65,4 +67,3 @@
 3. FastRoHGCN 的 DBLP clean 为 90.15，但所有 poisoning 条件均降至 35.88–52.03。
    该现象跨五个 seed、两个攻击族重复出现，不能视为单次随机异常；在论文解释前需结合
    关系级边变化和其 top-$k$ 相似度预处理进一步诊断。
-

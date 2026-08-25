@@ -1,5 +1,7 @@
 # 攻击有效性审计
 
+> **专项审计。** 论文主结果及其结论边界以 `docs/final-experiment-results.md` 为准。
+
 ## 审计范围
 
 - 协议：ACM/DBLP 主模型、鲁棒基线和 OpenHGNN 基线 poisoning，共 1,210 次运行。

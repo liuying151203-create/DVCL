@@ -1,12 +1,16 @@
 protocol_configs:
   - configs/protocols/acm_poisoning_main_v1.yaml
   - configs/protocols/dblp_poisoning_main_v1.yaml
+  - configs/protocols/robust_baselines_poisoning_v1.yaml
+  - configs/protocols/openhgnn_baselines_poisoning_v1.yaml
+  - configs/protocols/rnd_poisoning_v1.yaml
   - configs/protocols/hg_baseline_target_evasion_v1.yaml
   - configs/protocols/aminer_poisoning_main_v1.yaml
   - configs/protocols/aminer_rnd_poisoning_v1.yaml
   - configs/protocols/aminer_hg_baseline_target_evasion_v1.yaml
   - configs/protocols/acm_dblp_attack_seed_recheck_v1.yaml
   - configs/protocols/dvcl_adaptive_target_evasion_v1.yaml
+  - configs/suites/acm_poisoning_ablation_v1.yaml
 
 artifact_roots:
   - data/processed/acm
@@ -21,8 +25,12 @@ artifact_roots:
 
 analysis_paths:
   - docs/final-experiment-results.md
+  - docs/README.md
   - docs/acm-experiment-results.md
   - docs/dblp-experiment-results.md
   - docs/aminer-experiment-results.md
   - docs/target-evasion-results.md
+  - docs/robust-baseline-results.md
+  - docs/openhgnn-baseline-results.md
+  - docs/rnd-attack-results.md
   - docs/figures/paper

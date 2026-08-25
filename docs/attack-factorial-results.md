@@ -1,5 +1,7 @@
 # 攻击因子实验结果
 
+> **专项附录。** 统一主表与结论以 `docs/final-experiment-results.md` 为准。
+
 ## 实验设置
 
 - 数据集：ACM、DBLP；模型：HAN、HeteroSAGE、HSeCo、DVCL。
@@ -78,4 +80,3 @@
    方差显著增大，因此不能把 DBLP 结论直接推广到 ACM。
 4. 严格生成审计确认 12 个 artifact 均包含 200 步优化历史、surrogate 前后 Micro-F1、
    实际预算、关系变化以及 `constrained`/`biased` 配置。
-
