@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -136,6 +137,35 @@ def test_model_selection_partitions_formal_suite():
     assert all(command[command.index("--model") + 1] == "han" for command in commands)
 
 
+def test_dimension_filters_select_one_adaptive_pilot_unit():
+    config = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" / "adaptive_attack_strength_pilot_v1.yaml"
+    )
+    config = RUN_SUITE.select_models(config, ["han"])
+    config = RUN_SUITE.select_datasets(config, ["acm"])
+    config = RUN_SUITE.select_attacks(config, ["cand_16"], [1])
+    config = RUN_SUITE.select_seeds(config, split=[1], attack=[1], train=[1])
+    commands = list(RUN_SUITE.commands(config, "python", ROOT))
+    assert len(commands) == 1
+    command = commands[0]
+    assert command[command.index("--dataset") + 1] == "acm"
+    assert command[command.index("--attack-variant") + 1] == "cand_16"
+    assert command[command.index("--rate") + 1] == "1"
+    assert command[command.index("--attack-seed") + 1] == "1"
+    assert command[command.index("--train-seed") + 1] == "1"
+
+
+def test_adaptive_strength_screen_has_twelve_units():
+    config = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" / "adaptive_attack_strength_screen_v1.yaml"
+    )
+    commands = list(RUN_SUITE.commands(config, "python", ROOT))
+    assert len(commands) == 12
+    assert {
+        command[command.index("--attack-variant") + 1] for command in commands
+    } == {"cand_16", "cand_64", "cand_128"}
+
+
 def test_variant_selection_partitions_ablation_suite():
     config = RUN_SUITE.load_config(
         ROOT / "configs" / "suites" / "acm_poisoning_ablation_v1.yaml"
@@ -204,3 +234,72 @@ def test_attack_path_pattern_supports_all_seed_dimensions():
     assert command[command.index("--attack-path") + 1] == (
         "data/acm/dvcl/split_1/attack_2/train_3.pt"
     )
+
+
+def test_checkpoint_pattern_is_expanded_per_model_and_train_seed():
+    config = {
+        "protocol": "adaptive",
+        "datasets": ["acm"],
+        "models": [{"name": "han", "backend": "native"}],
+        "attacks": [{
+            "name": "adaptive_query", "rates": [3],
+            "threat_model": "evasion", "scope": "target", "adaptive": True,
+        }],
+        "seeds": {"split": [1], "attack": [2], "train": [3]},
+        "checkpoint_pattern": (
+            "outputs/clean/{dataset}/{model}/split_{split_seed}/train_{train_seed}.pt"
+        ),
+    }
+    command = next(RUN_SUITE.commands(config, "python", ROOT))
+    assert command[command.index("--checkpoint-source") + 1] == (
+        "outputs/clean/acm/han/split_1/train_3.pt"
+    )
+
+
+def test_adaptive_clean_and_strength_pilot_suite_sizes():
+    clean = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" / "adaptive_clean_checkpoints_v1.yaml"
+    )
+    pilot = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" / "adaptive_attack_strength_pilot_v1.yaml"
+    )
+    assert len(list(RUN_SUITE.commands(clean, "python", ROOT))) == 165
+    commands = list(RUN_SUITE.commands(pilot, "python", ROOT))
+    assert len(commands) == 432
+    assert all("--checkpoint-source" in command for command in commands)
+    assert all("--adaptive" in command for command in commands)
+
+
+def test_cuda_oom_is_retried_without_retrying_other_failures():
+    responses = iter([
+        SimpleNamespace(returncode=RUN_SUITE.CUDA_OOM_EXIT_CODE),
+        SimpleNamespace(returncode=0),
+    ])
+    calls = []
+    sleeps = []
+
+    def runner(command, cwd, check):
+        calls.append((command, cwd, check))
+        return next(responses)
+
+    result = RUN_SUITE.run_with_oom_retries(
+        ["python", "experiment.py"], ROOT, retries=2, delay=3,
+        runner=runner, sleeper=sleeps.append,
+    )
+    assert result.returncode == 0
+    assert len(calls) == 2
+    assert sleeps == [3]
+
+    non_oom_calls = []
+
+    def fail_once(command, cwd, check):
+        non_oom_calls.append((command, cwd, check))
+        return SimpleNamespace(returncode=1)
+
+    result = RUN_SUITE.run_with_oom_retries(
+        ["python", "experiment.py"], ROOT, retries=2,
+        runner=fail_once,
+        sleeper=sleeps.append,
+    )
+    assert result.returncode == 1
+    assert len(non_oom_calls) == 1

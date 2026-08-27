@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Callable, Dict, Iterable, List, Mapping, Sequence, Tuple
 
 import numpy as np
@@ -37,7 +39,7 @@ def target_candidates(
         endpoint_count = adjacency.shape[1]
         edge = lambda endpoint: [int(target), int(endpoint)]
     else:
-        existing = adjacency.getcol(target).indices.astype(np.int64)
+        existing = adjacency.getcol(target).nonzero()[0].astype(np.int64)
         endpoint_count = adjacency.shape[0]
         edge = lambda endpoint: [int(endpoint), int(target)]
     existing_set = set(existing.tolist())
@@ -75,8 +77,11 @@ def greedy_query_target_changes(
     labels = labels.detach()
     clean_logits = clean_logits.detach()
     records = []
+    candidate_pools = []
     query_count = 0
     changed_targets = 0
+    skipped_clean_incorrect = 0
+    early_stopped_successes = 0
     for raw_target in targets:
         target = int(raw_target)
         record = {
@@ -86,15 +91,29 @@ def greedy_query_target_changes(
             "target_position": int(spec["target_position"]),
             "deleted": [],
             "added": [],
+            "sequence": [],
+            "queries_per_step": [],
+            "terminal_queries": 0,
         }
         true_label = int(labels[target])
         current_margin = adversarial_margin(clean_logits[target], true_label)
         candidates = target_candidates(
             clean, target, seed, max_additions, max_deletions
         )
+        candidate_pools.append({
+            "target": target,
+            "candidates": [
+                [kind, list(edge)] for kind, edge in candidates
+            ],
+        })
+        if int(clean_logits[target].argmax()) != true_label:
+            skipped_clean_incorrect += 1
+            records.append(record)
+            continue
         for _ in range(budget):
             best = None
             best_margin = current_margin
+            step_queries = 0
             for kind, edge in candidates:
                 candidate_record = _with_change(record, kind, edge)
                 with torch.no_grad():
@@ -102,30 +121,101 @@ def greedy_query_target_changes(
                         apply_target_change(clean, candidate_record), candidate_record
                     )
                 query_count += 1
+                step_queries += 1
                 margin = adversarial_margin(logits[target], true_label)
                 if margin > best_margin:
                     best = (kind, edge)
                     best_margin = margin
             if best is None:
+                record["terminal_queries"] = step_queries
                 break
             kind, edge = best
             record[kind].append(edge)
+            record["sequence"].append({
+                "kind": kind,
+                "edge": list(edge),
+                "margin": float(best_margin),
+            })
+            record["queries_per_step"].append(step_queries)
             candidates.remove(best)
             current_margin = best_margin
+            if current_margin > 0:
+                early_stopped_successes += 1
+                break
         if record["deleted"] or record["added"]:
             changed_targets += 1
         records.append(record)
+    change_counts = [
+        len(record["deleted"]) + len(record["added"])
+        for record in records
+    ]
+    total_changes = int(sum(change_counts))
     diagnostics = {
         "targets": len(records),
         "changed_targets": changed_targets,
+        "skipped_clean_incorrect": skipped_clean_incorrect,
+        "early_stopped_successes": early_stopped_successes,
+        "total_changes": total_changes,
+        "mean_changes_per_target": (
+            float(np.mean(change_counts)) if change_counts else 0.0
+        ),
+        "budget_utilization": (
+            total_changes / (len(records) * budget) if records else 0.0
+        ),
         "queries": query_count,
         "budget_per_target": int(budget),
         "candidate_additions": int(max_additions),
         "candidate_deletions": int(max_deletions),
         "objective": "maximize max_other_logit_minus_true_logit",
         "algorithm": "greedy_score_based_query",
+        "candidate_pool_sha256": hashlib.sha256(
+            json.dumps(candidate_pools, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
     }
     return records, diagnostics
+
+
+def records_at_budget(records: Iterable[Mapping[str, object]], budget: int):
+    if budget < 0:
+        raise ValueError("Adaptive target budget must be non-negative")
+    output = []
+    for record in records:
+        value = {
+            "target": int(record["target"]),
+            "relation": str(record["relation"]),
+            "reverse_relation": str(record["reverse_relation"]),
+            "target_position": int(record["target_position"]),
+            "deleted": [],
+            "added": [],
+            "sequence": [],
+            "queries_per_step": list(record.get("queries_per_step", []))[:budget],
+            "terminal_queries": 0,
+        }
+        sequence = list(record.get("sequence", []))
+        if not sequence and (record.get("deleted") or record.get("added")):
+            sequence = [
+                *({"kind": "deleted", "edge": list(edge)}
+                  for edge in record.get("deleted", [])),
+                *({"kind": "added", "edge": list(edge)}
+                  for edge in record.get("added", [])),
+            ]
+        for item in sequence[:budget]:
+            kind = str(item["kind"])
+            edge = list(item["edge"])
+            value[kind].append(edge)
+            value["sequence"].append({**item, "edge": edge})
+        if len(sequence) < budget:
+            value["terminal_queries"] = int(record.get("terminal_queries", 0))
+        output.append(value)
+    return output
+
+
+def record_query_count(records: Iterable[Mapping[str, object]]) -> int:
+    return int(sum(
+        sum(int(value) for value in record.get("queries_per_step", []))
+        + int(record.get("terminal_queries", 0))
+        for record in records
+    ))
 
 
 def _with_change(record: Mapping[str, object], kind: str, edge: Sequence[int]):

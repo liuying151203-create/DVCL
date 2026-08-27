@@ -1,0 +1,76 @@
+protocol: adaptive_target_evasion_v1
+device: cuda:0
+selection:
+  path: /home/liuying/project/DVCL/outputs/analysis/adaptive_attack_strength_screen_v1/selection.json
+  sha256: cdf16651cf69cfb0323dce523b52206206d7909a1084dcaaeb6d43c8764879d8
+  candidate_additions: 64
+  candidate_deletions: 64
+evaluation_budgets:
+- 1
+- 3
+- 5
+datasets:
+- acm
+- dblp
+- aminer
+models:
+- name: han
+  backend: native
+  config_path: configs/models/han.yaml
+- name: heterosage
+  backend: native
+  config_path: configs/models/heterosage.yaml
+- name: rohe
+  backend: native
+  config_path: configs/models/rohe.yaml
+- name: heteroguard
+  backend: native
+  config_path: configs/models/heteroguard.yaml
+- name: fastrohgcn
+  backend: native
+  config_path: configs/models/fastrohgcn.yaml
+- name: hgt
+  backend: openhgnn
+  config_path: configs/models/hgt.yaml
+- name: magnn
+  backend: openhgnn
+  config_path: configs/models/magnn.yaml
+- name: heco
+  backend: openhgnn
+  config_path: configs/models/heco.yaml
+- name: simplehgn
+  backend: openhgnn
+  config_path: configs/models/simplehgn.yaml
+- name: hseco
+  backend: native
+  config_path: configs/models/hseco_native.yaml
+- name: dvcl
+  backend: native
+  config_path: configs/models/dvcl.yaml
+split_name_pattern: paper_seed_{seed}
+checkpoint_pattern: outputs/checkpoints/adaptive_clean_v1/{dataset}/{model}/train_seed_{train_seed}/checkpoint.pt
+attacks:
+- name: adaptive_query
+  variant: cand_64
+  rates:
+  - 5
+  threat_model: evasion
+  scope: target
+  adaptive: true
+  path_pattern: outputs/attacks/adaptive_requests_v1/cand_64/{dataset}/adaptive_query/rate_{rate}/seed_{attack_seed}/attack.pt
+seeds:
+  split:
+  - 1
+  attack:
+  - 1
+  - 2
+  - 3
+  train:
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+training:
+  epochs: 200
+  patience: 100

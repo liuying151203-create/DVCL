@@ -5,7 +5,7 @@ from typing import Any, Dict, Mapping
 SUPPORTED_DATASETS = {"acm", "dblp", "aminer", "imdb"}
 SUPPORTED_ATTACKS = {
     "clean", "rnd", "prbcd", "heteprbcd", "hg_baseline",
-    "dvcl_adaptive_query",
+    "adaptive_query", "dvcl_adaptive_query",
 }
 LEGACY_MODELS = {"hseco", "dvcl"}
 NATIVE_MODELS = {
@@ -52,13 +52,13 @@ class AttackSpec:
             self.threat_model != "evasion" or self.scope != "target"
         ):
             raise ValueError("hg_baseline requires target evasion semantics")
-        if self.name == "dvcl_adaptive_query" and (
+        if self.name in {"adaptive_query", "dvcl_adaptive_query"} and (
             self.threat_model != "evasion"
             or self.scope != "target"
             or not self.adaptive
         ):
             raise ValueError(
-                "dvcl_adaptive_query requires adaptive target evasion semantics"
+                f"{self.name} requires adaptive target evasion semantics"
             )
 
 

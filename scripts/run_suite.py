@@ -4,11 +4,13 @@ import json
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+CUDA_OOM_EXIT_CODE = 75
 
 
 def parse_args():
@@ -20,7 +22,15 @@ def parse_args():
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--model", action="append", dest="models")
     parser.add_argument("--variant", action="append", dest="variants")
+    parser.add_argument("--dataset", action="append", dest="datasets")
+    parser.add_argument("--attack-variant", action="append", dest="attack_variants")
+    parser.add_argument("--rate", action="append", type=float, dest="rates")
+    parser.add_argument("--split-seed", action="append", type=int, dest="split_seeds")
+    parser.add_argument("--attack-seed", action="append", type=int, dest="attack_seeds")
+    parser.add_argument("--train-seed", action="append", type=int, dest="train_seeds")
     parser.add_argument("--device")
+    parser.add_argument("--oom-retries", type=int, default=0)
+    parser.add_argument("--oom-retry-delay", type=float, default=60.0)
     return parser.parse_args()
 
 
@@ -60,6 +70,69 @@ def select_variants(config, selected):
     return result
 
 
+def select_datasets(config, selected):
+    if not selected:
+        return config
+    selected = set(selected)
+    available = set(config.get("datasets", [config.get("dataset")]))
+    missing = selected - available
+    if missing:
+        raise ValueError(f"Unknown selected datasets: {sorted(missing)}")
+    result = dict(config)
+    if "datasets" not in config:
+        result["dataset"] = next(iter(selected))
+        return result
+    result["datasets"] = [
+        dataset for dataset in config["datasets"] if dataset in selected
+    ]
+    return result
+
+
+def select_attacks(config, selected_variants=None, selected_rates=None):
+    if not selected_variants and not selected_rates:
+        return config
+    selected_variants = set(selected_variants or [])
+    selected_rates = set(selected_rates or [])
+    available_variants = {
+        attack.get("variant", "default") for attack in config.get("attacks", [])
+    }
+    missing = selected_variants - available_variants
+    if missing:
+        raise ValueError(f"Unknown selected attack variants: {sorted(missing)}")
+    result = dict(config)
+    attacks = []
+    for attack in config.get("attacks", []):
+        if selected_variants and attack.get("variant", "default") not in selected_variants:
+            continue
+        value = dict(attack)
+        if selected_rates:
+            rates = [0] if attack["name"] == "clean" else attack.get("rates", [])
+            value["rates"] = [rate for rate in rates if float(rate) in selected_rates]
+            if not value["rates"]:
+                continue
+        attacks.append(value)
+    result["attacks"] = attacks
+    return result
+
+
+def select_seeds(config, split=None, attack=None, train=None):
+    if not split and not attack and not train:
+        return config
+    result = dict(config)
+    seeds = dict(config.get("seeds", {}))
+    for name, selected in (("split", split), ("attack", attack), ("train", train)):
+        if not selected:
+            continue
+        selected = set(selected)
+        available = set(seeds.get(name, [1]))
+        missing = selected - available
+        if missing:
+            raise ValueError(f"Unknown selected {name} seeds: {sorted(missing)}")
+        seeds[name] = [value for value in seeds.get(name, [1]) if value in selected]
+    result["seeds"] = seeds
+    return result
+
+
 def commands(config, python_bin, base_dir=ROOT):
     if "variants" in config:
         yield from ablation_commands(config, python_bin)
@@ -84,6 +157,7 @@ def commands(config, python_bin, base_dir=ROOT):
                 attack, rate, split_seed, attack_seed, train_seed, training,
                 config.get("device", "cuda:0"), model_config,
                 config.get("split_name_pattern", "paper_seed_{seed}").format(seed=split_seed),
+                config.get("checkpoint_pattern"),
             )
 
 
@@ -104,6 +178,7 @@ def ablation_commands(config, python_bin):
                 split_seed, attack_seed, train_seed, training,
                 config.get("device", "cuda:0"), model_config,
                 config.get("split_name", f"paper_seed_{split_seed}"),
+                config.get("checkpoint_pattern"),
             )
 
 
@@ -121,6 +196,7 @@ def resolve_model_config(model, base_dir: Path):
 def command_for(
     python_bin, protocol, dataset, model, backend, attack, rate,
     split_seed, attack_seed, train_seed, training, device, model_config, split_name,
+    checkpoint_pattern=None,
 ):
     command = [
         python_bin,
@@ -154,6 +230,16 @@ def command_for(
                 train_seed=train_seed,
             ),
         ])
+    if checkpoint_pattern:
+        command.extend([
+            "--checkpoint-source",
+            checkpoint_pattern.format(
+                dataset=dataset, model=model, attack=attack["name"],
+                variant=attack.get("variant", "default"), rate=f"{rate:g}",
+                seed=attack_seed, split_seed=split_seed,
+                attack_seed=attack_seed, train_seed=train_seed,
+            ),
+        ])
     if attack.get("adaptive", False):
         command.append("--adaptive")
     return command
@@ -167,6 +253,11 @@ def main() -> int:
     config = load_config(path)
     config = select_models(config, args.models)
     config = select_variants(config, args.variants)
+    config = select_datasets(config, args.datasets)
+    config = select_attacks(config, args.attack_variants, args.rates)
+    config = select_seeds(
+        config, args.split_seeds, args.attack_seeds, args.train_seeds
+    )
     if args.device:
         config = {**config, "device": args.device}
     failures = 0
@@ -176,12 +267,34 @@ def main() -> int:
         if args.force:
             command.append("--force")
         print(shlex.join(command), flush=True)
-        result = subprocess.run(command, cwd=str(ROOT), check=False)
+        result = run_with_oom_retries(
+            command,
+            cwd=str(ROOT),
+            retries=args.oom_retries,
+            delay=args.oom_retry_delay,
+        )
         if result.returncode:
             failures += 1
             if not args.continue_on_error:
                 return result.returncode
     return 1 if failures else 0
+
+
+def run_with_oom_retries(
+    command, cwd, retries=0, delay=60.0,
+    runner=subprocess.run, sleeper=time.sleep,
+):
+    if retries < 0:
+        raise ValueError("OOM retries must be non-negative")
+    for attempt in range(retries + 1):
+        result = runner(command, cwd=cwd, check=False)
+        if result.returncode != CUDA_OOM_EXIT_CODE or attempt == retries:
+            return result
+        print(
+            f"CUDA OOM; retry {attempt + 1}/{retries} after {delay:g}s",
+            flush=True,
+        )
+        sleeper(delay)
 
 
 if __name__ == "__main__":

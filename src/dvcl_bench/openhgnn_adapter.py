@@ -16,7 +16,7 @@ from torch.nn import functional as F
 
 from .adapters import (
     _device,
-    _evaluate_target_evasion,
+    _evaluate_model_target_evasion,
     _inputs,
     _is_target_evasion,
     _selected_adjs,
@@ -38,6 +38,7 @@ from .training import (
     SimpleHGNTrainConfig,
     TrainingResult,
     classification_metrics,
+    restore_checkpoint,
     save_checkpoint,
     set_random_seed,
 )
@@ -104,6 +105,7 @@ def train_openhgnn(
     device: str,
     checkpoint_path: Path,
     model_name: str,
+    checkpoint_source: Optional[Path] = None,
 ) -> TrainingResult:
     set_random_seed(train_seed)
     target = _device(device)
@@ -111,8 +113,9 @@ def train_openhgnn(
     selected_adjs = _selected_adjs(clean, attack)
     if model_name == "heco":
         return _train_heco(
-            clean, attack, config, features, labels, masks, selected_adjs,
-            epochs, patience, target, checkpoint_path,
+            clean, split, attack, config, features, labels, masks, selected_adjs,
+            epochs, patience, target, checkpoint_path, train_seed,
+            checkpoint_source,
         )
 
     graph = _graph(clean, selected_adjs, target)
@@ -130,6 +133,7 @@ def train_openhgnn(
         epochs=epochs,
         patience=patience,
         checkpoint_path=checkpoint_path,
+        checkpoint_source=checkpoint_source,
     )
     result.diagnostics.update(_diagnostics(model_name))
     result.diagnostics.update({
@@ -166,8 +170,9 @@ def train_openhgnn(
             finally:
                 model.encoder.metapath_idx_dict = previous
 
-        _evaluate_target_evasion(
-            result, clean, attack, labels, clean_logits, target_forward
+        _evaluate_model_target_evasion(
+            result, clean, split, attack, labels, clean_logits, target_forward,
+            checkpoint_path, model_name, config, train_seed,
         )
     return result
 
@@ -221,8 +226,8 @@ def _build_supervised_encoder(name, clean, adjs, graph, config, device, train_se
 
 
 def _train_heco(
-    clean, attack, config, features, labels, masks, selected_adjs,
-    epochs, patience, device, checkpoint_path,
+    clean, split, attack, config, features, labels, masks, selected_adjs,
+    epochs, patience, device, checkpoint_path, train_seed, checkpoint_source,
 ):
     from openhgnn.models.HeCo import LogReg
 
@@ -245,6 +250,38 @@ def _train_heco(
     pipeline = HeCoPipeline(
         input_feature, encoder, LogReg(config.hidden_dim, clean.num_classes).to(device)
     ).to(device)
+    if checkpoint_source is not None:
+        best_epoch = restore_checkpoint(
+            checkpoint_source, checkpoint_path, pipeline, config
+        )
+        pipeline.eval()
+        with torch.no_grad():
+            clean_logits = pipeline(graph)
+        metrics = classification_metrics(
+            clean_logits[masks["test"]], labels[masks["test"]]
+        )
+        result = TrainingResult(
+            metrics,
+            [{"epoch": best_epoch, "checkpoint_reused": True}],
+            best_epoch,
+            best_epoch,
+            {
+                **_diagnostics("heco"),
+                "checkpoint_reused": True,
+                "checkpoint_source": str(Path(checkpoint_source).resolve()),
+                "optimizer_steps": 0,
+            },
+        )
+        if _is_target_evasion(attack):
+            def target_forward(adjs, record):
+                attacked_graph = _graph(clean, adjs, device)
+                return pipeline(attacked_graph)
+
+            _evaluate_model_target_evasion(
+                result, clean, split, attack, labels, clean_logits,
+                target_forward, checkpoint_path, "heco", config, train_seed,
+            )
+        return result
     positive = _heco_positive(selected_adjs, clean.meta_paths, config.positive_topk, device)
     optimizer = torch.optim.Adam(
         list(pipeline.input_feature.parameters()) + list(pipeline.encoder.parameters()),
@@ -335,8 +372,9 @@ def _train_heco(
             attacked_graph = _graph(clean, adjs, device)
             return pipeline.classifier(pipeline.embeddings(attacked_graph))
 
-        _evaluate_target_evasion(
-            result, clean, attack, labels, clean_logits, target_forward
+        _evaluate_model_target_evasion(
+            result, clean, split, attack, labels, clean_logits, target_forward,
+            checkpoint_path, "heco", config, train_seed,
         )
     return result
 

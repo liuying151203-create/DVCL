@@ -1,0 +1,45 @@
+protocol: adaptive_attack_strength_pilot_v1
+device: cuda:0
+
+datasets: [acm, dblp]
+
+models:
+  - {name: han, backend: native, config_path: configs/models/han.yaml}
+  - {name: heteroguard, backend: native, config_path: configs/models/heteroguard.yaml}
+  - {name: hseco, backend: native, config_path: configs/models/hseco_native.yaml}
+  - {name: dvcl, backend: native, config_path: configs/models/dvcl.yaml}
+
+split_name_pattern: paper_seed_{seed}
+checkpoint_pattern: outputs/checkpoints/adaptive_clean_v1/{dataset}/{model}/train_seed_{train_seed}/checkpoint.pt
+
+attacks:
+  - name: adaptive_query
+    variant: cand_16
+    rates: [1, 3, 5]
+    threat_model: evasion
+    scope: target
+    adaptive: true
+    path_pattern: outputs/pilots/adaptive_requests/cand_16/{dataset}/adaptive_query/rate_{rate}/seed_{attack_seed}/attack.pt
+  - name: adaptive_query
+    variant: cand_64
+    rates: [1, 3, 5]
+    threat_model: evasion
+    scope: target
+    adaptive: true
+    path_pattern: outputs/pilots/adaptive_requests/cand_64/{dataset}/adaptive_query/rate_{rate}/seed_{attack_seed}/attack.pt
+  - name: adaptive_query
+    variant: cand_128
+    rates: [1, 3, 5]
+    threat_model: evasion
+    scope: target
+    adaptive: true
+    path_pattern: outputs/pilots/adaptive_requests/cand_128/{dataset}/adaptive_query/rate_{rate}/seed_{attack_seed}/attack.pt
+
+seeds:
+  split: [1]
+  attack: [1, 2, 3]
+  train: [1, 2]
+
+training:
+  epochs: 200
+  patience: 100

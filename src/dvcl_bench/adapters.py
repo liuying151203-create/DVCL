@@ -10,7 +10,11 @@ import numpy as np
 import torch
 from torch import nn
 
-from .adaptive import greedy_query_target_changes
+from .adaptive import (
+    greedy_query_target_changes,
+    record_query_count,
+    records_at_budget,
+)
 from .artifacts import (
     AttackArtifact,
     CleanGraphArtifact,
@@ -50,6 +54,7 @@ from .training import (
     LegacyEarlyStopping,
     TrainingResult,
     classification_metrics,
+    restore_checkpoint,
     save_checkpoint,
     set_random_seed,
 )
@@ -65,6 +70,7 @@ def train_han(
     patience: int,
     device: str,
     checkpoint_path: Path,
+    checkpoint_source: Optional[Path] = None,
 ) -> TrainingResult:
     import dgl
 
@@ -89,6 +95,7 @@ def train_han(
         epochs=epochs,
         patience=patience,
         checkpoint_path=checkpoint_path,
+        checkpoint_source=checkpoint_source,
     )
     result.diagnostics.update({
         "semantic_attention": model.semantic_weights().detach().cpu().tolist(),
@@ -98,12 +105,13 @@ def train_han(
         model.eval()
         with torch.no_grad():
             clean_logits = model(features, views)
-        _evaluate_target_evasion(
-            result, clean, attack, labels, clean_logits,
+        _evaluate_model_target_evasion(
+            result, clean, split, attack, labels, clean_logits,
             lambda adjs, record: model(features, [
                 dgl.from_scipy(meta_path_adjacency(adjs, path)).to(target)
                 for path in clean.meta_paths
             ]),
+            checkpoint_path, "han", config, train_seed,
         )
     return result
 
@@ -118,6 +126,7 @@ def train_heterosage(
     patience: int,
     device: str,
     checkpoint_path: Path,
+    checkpoint_source: Optional[Path] = None,
 ) -> TrainingResult:
     set_random_seed(train_seed)
     target = _device(device)
@@ -147,6 +156,7 @@ def train_heterosage(
         epochs=epochs,
         patience=patience,
         checkpoint_path=checkpoint_path,
+        checkpoint_source=checkpoint_source,
     )
     result.diagnostics.update({
         "num_layers": config.num_layers,
@@ -164,8 +174,9 @@ def train_heterosage(
             ).to(target)
             return model(attacked_graph, node_features)[clean.predict_ntype]
 
-        _evaluate_target_evasion(
-            result, clean, attack, labels, clean_logits, target_forward
+        _evaluate_model_target_evasion(
+            result, clean, split, attack, labels, clean_logits, target_forward,
+            checkpoint_path, "heterosage", config, train_seed,
         )
     return result
 
@@ -180,6 +191,7 @@ def train_heteroguard(
     patience: int,
     device: str,
     checkpoint_path: Path,
+    checkpoint_source: Optional[Path] = None,
 ) -> TrainingResult:
     set_random_seed(train_seed)
     target = _device(device)
@@ -216,6 +228,7 @@ def train_heteroguard(
         epochs=epochs,
         patience=patience,
         checkpoint_path=checkpoint_path,
+        checkpoint_source=checkpoint_source,
     )
     result.diagnostics.update({
         "attention_threshold": config.attention_threshold,
@@ -227,9 +240,10 @@ def train_heteroguard(
         model.eval()
         with torch.no_grad():
             clean_logits = model(node_features, selected_edges)[clean.predict_ntype]
-        _evaluate_target_evasion(
-            result, clean, attack, labels, clean_logits,
+        _evaluate_model_target_evasion(
+            result, clean, split, attack, labels, clean_logits,
             lambda adjs, record: model(node_features, edge_indices(adjs))[clean.predict_ntype],
+            checkpoint_path, "heteroguard", config, train_seed,
         )
     return result
 
@@ -244,6 +258,7 @@ def train_rohe(
     patience: int,
     device: str,
     checkpoint_path: Path,
+    checkpoint_source: Optional[Path] = None,
 ) -> TrainingResult:
     config = config.freeze_for_dataset(clean.dataset)
     set_random_seed(train_seed)
@@ -281,6 +296,7 @@ def train_rohe(
         epochs=epochs,
         patience=patience,
         checkpoint_path=checkpoint_path,
+        checkpoint_source=checkpoint_source,
     )
     result.diagnostics.update({
         "top_t": config.top_t,
@@ -290,9 +306,10 @@ def train_rohe(
         model.eval()
         with torch.no_grad():
             clean_logits = model(features, selected_transitions)
-        _evaluate_target_evasion(
-            result, clean, attack, labels, clean_logits,
+        _evaluate_model_target_evasion(
+            result, clean, split, attack, labels, clean_logits,
             lambda adjs, record: model(features, transitions(adjs)),
+            checkpoint_path, "rohe", config, train_seed,
         )
     return result
 
@@ -307,6 +324,7 @@ def train_fastrohgcn(
     patience: int,
     device: str,
     checkpoint_path: Path,
+    checkpoint_source: Optional[Path] = None,
 ) -> TrainingResult:
     import dgl
     import scipy.sparse as sp
@@ -395,6 +413,7 @@ def train_fastrohgcn(
         epochs=epochs,
         patience=patience,
         checkpoint_path=checkpoint_path,
+        checkpoint_source=checkpoint_source,
     )
     result.diagnostics.update({
         "implementation": "independent reproduction from official FastRo-HGCN",
@@ -412,8 +431,9 @@ def train_fastrohgcn(
             graph, edge_weight = preprocess(adjs)
             return model(features, graph, edge_weight)[target_start:target_end]
 
-        _evaluate_target_evasion(
-            result, clean, attack, labels, clean_logits, target_forward
+        _evaluate_model_target_evasion(
+            result, clean, split, attack, labels, clean_logits, target_forward,
+            checkpoint_path, "fastrohgcn", config, train_seed,
         )
     return result
 
@@ -428,6 +448,7 @@ def train_hseco(
     patience: int,
     device: str,
     checkpoint_path: Path,
+    checkpoint_source: Optional[Path] = None,
 ) -> TrainingResult:
     import dgl
 
@@ -459,6 +480,55 @@ def train_hseco(
     holder = node_model if config.legacy_checkpoint_semantics else nn.ModuleDict({
         "semantic": semantic, "node": node_model
     })
+    if checkpoint_source is not None:
+        if config.legacy_checkpoint_semantics:
+            raise ValueError("Checkpoint reuse requires full HSeCo checkpoint semantics")
+        best_epoch = restore_checkpoint(
+            checkpoint_source, checkpoint_path, holder, config
+        )
+        semantic.eval()
+        node_model.eval()
+        with torch.no_grad():
+            semantic(features, views)
+            last_attention = semantic.semantic_weights().detach().cpu()
+            last_graph = dgl.from_scipy(
+                semantic_graph(
+                    transitions, last_attention.to(target), config.global_threshold
+                )
+            ).to(target)
+            test_logits = node_model(features, last_graph)
+        metrics = classification_metrics(
+            test_logits[masks["test"]], labels[masks["test"]]
+        )
+        result = TrainingResult(
+            metrics,
+            [{"epoch": best_epoch, "checkpoint_reused": True}],
+            best_epoch,
+            best_epoch,
+            {
+                "semantic_attention": last_attention.tolist(),
+                "checkpoint_reused": True,
+                "checkpoint_source": str(Path(checkpoint_source).resolve()),
+                "optimizer_steps": 0,
+            },
+        )
+        if _is_target_evasion(attack):
+            def target_forward(adjs, record):
+                attacked_transitions = transition_edges(
+                    features, adjs, clean.meta_paths, similarity
+                )
+                attacked_graph = dgl.from_scipy(semantic_graph(
+                    attacked_transitions,
+                    last_attention.to(target),
+                    config.global_threshold,
+                )).to(target)
+                return node_model(features, attacked_graph)
+
+            _evaluate_model_target_evasion(
+                result, clean, split, attack, labels, test_logits, target_forward,
+                checkpoint_path, "hseco", config, train_seed,
+            )
+        return result
     stopper = LegacyEarlyStopping(patience)
     history = []
     last_graph = None
@@ -540,8 +610,9 @@ def train_hseco(
             )).to(target)
             return node_model(features, attacked_graph)
 
-        _evaluate_target_evasion(
-            result, clean, attack, labels, test_logits, target_forward
+        _evaluate_model_target_evasion(
+            result, clean, split, attack, labels, test_logits, target_forward,
+            checkpoint_path, "hseco", config, train_seed,
         )
     return result
 
@@ -556,6 +627,7 @@ def train_dvcl(
     patience: int,
     device: str,
     checkpoint_path: Path,
+    checkpoint_source: Optional[Path] = None,
 ) -> TrainingResult:
     import dgl
 
@@ -586,6 +658,67 @@ def train_dvcl(
     holder = model if config.legacy_checkpoint_semantics else nn.ModuleDict({
         "semantic": semantic, "dvcl": model
     })
+    if checkpoint_source is not None:
+        if config.legacy_checkpoint_semantics:
+            raise ValueError("Checkpoint reuse requires full DVCL checkpoint semantics")
+        best_epoch = restore_checkpoint(
+            checkpoint_source, checkpoint_path, holder, config
+        )
+        semantic.eval()
+        model.eval()
+        with torch.no_grad():
+            semantic(features, views)
+            last_attention = semantic.semantic_weights().detach().cpu()
+            last_graph = dgl.from_scipy(
+                semantic_graph(
+                    transitions, last_attention.to(target), config.global_threshold
+                )
+            ).to(target)
+            test_logits, topology, feature = model(
+                features, last_graph, feature_graph
+            )
+        metrics = classification_metrics(
+            test_logits[masks["test"]], labels[masks["test"]]
+        )
+        diagnostics = {
+            "semantic_attention": last_attention.tolist(),
+            "feature_knn_edges": int(feature_graph.num_edges()),
+            "view_mode": config.view_mode,
+            "checkpoint_reused": True,
+            "checkpoint_source": str(Path(checkpoint_source).resolve()),
+            "optimizer_steps": 0,
+        }
+        if model.last_gate_weight is not None:
+            diagnostics["gate_mean"] = float(model.last_gate_weight.mean())
+        result = TrainingResult(
+            metrics,
+            [{"epoch": best_epoch, "checkpoint_reused": True}],
+            best_epoch,
+            best_epoch,
+            diagnostics,
+        )
+        if _is_target_evasion(attack):
+            def target_forward(adjs, record):
+                attacked_transitions = transition_edges(
+                    features, adjs, clean.meta_paths, similarity
+                )
+                attacked_graph = dgl.from_scipy(semantic_graph(
+                    attacked_transitions,
+                    last_attention.to(target),
+                    config.global_threshold,
+                )).to(target)
+                attacked_topology = None
+                if config.view_mode in {"both", "both_nocl", "topo"}:
+                    attacked_topology = model.topology_encoder(
+                        features, attacked_graph
+                    )
+                return model.classify(attacked_topology, feature)[0]
+
+            _evaluate_model_target_evasion(
+                result, clean, split, attack, labels, test_logits, target_forward,
+                checkpoint_path, "dvcl", config, train_seed,
+            )
+        return result
     stopper = LegacyEarlyStopping(patience)
     history = []
     last_graph = None
@@ -662,7 +795,6 @@ def train_dvcl(
     }
     if model.last_gate_weight is not None:
         diagnostics["gate_mean"] = float(model.last_gate_weight.mean())
-    effective_attack = attack
     target_forward = None
     if _is_target_evasion(attack):
         def target_forward(adjs, record):
@@ -677,76 +809,11 @@ def train_dvcl(
                 topology = model.topology_encoder(features, attacked_graph)
             return model.classify(topology, feature)[0]
 
-    if _is_dvcl_adaptive_request(attack):
-        semantic.eval()
-        model.eval()
-        max_additions = int(attack.provenance.get("candidate_additions", 16))
-        max_deletions = int(attack.provenance.get("candidate_deletions", 16))
-        records, adaptive_diagnostics = greedy_query_target_changes(
-            clean=clean,
-            targets=attack.target_nodes.tolist(),
-            labels=labels,
-            clean_logits=test_logits,
-            forward_for_adjs=target_forward,
-            budget=int(attack.attack_rate),
-            seed=attack.seed,
-            max_additions=max_additions,
-            max_deletions=max_deletions,
-        )
-        checkpoint_sha256 = file_sha256(checkpoint_path)
-        effective_attack = build_attack_artifact(
-            clean=clean,
-            split=split,
-            attack_name=attack.attack_name,
-            attack_rate=attack.attack_rate,
-            seed=attack.seed,
-            perturbed=clean.hete_adjs,
-            target_nodes=attack.target_nodes,
-            source=str(Path(checkpoint_path).resolve()),
-            source_sha256=checkpoint_sha256,
-            provenance={
-                **attack.provenance,
-                "request_only": False,
-                "generator": "dvcl_bench.adaptive.greedy_query_target_changes",
-                "victim_model": "dvcl",
-                "victim_train_seed": int(train_seed),
-                "victim_model_config": asdict(config),
-                "victim_checkpoint": str(Path(checkpoint_path).resolve()),
-                "victim_checkpoint_sha256": checkpoint_sha256,
-                **adaptive_diagnostics,
-            },
-            threat_model="evasion",
-            scope="target",
-            adaptive=True,
-            target_changes=records,
-        )
-        effective_attack.stats["_target"] = _target_change_stats(
-            records, effective_attack.attack_rate
-        )
-        adaptive_path = Path(checkpoint_path).with_name("adaptive_attack.pt")
-        save_attack_artifact(effective_attack, adaptive_path)
-        adaptive_report = verify_attack(clean, split, effective_attack)
-        save_json(
-            adaptive_report,
-            Path(checkpoint_path).with_name("adaptive_attack_verification.json"),
-        )
-        if not adaptive_report["ok"]:
-            raise RuntimeError(
-                "Generated adaptive attack failed verification: "
-                + "; ".join(adaptive_report["issues"])
-            )
-        diagnostics["adaptive_attack"] = {
-            **adaptive_diagnostics,
-            "path": str(adaptive_path),
-            "sha256": file_sha256(adaptive_path),
-            "victim_checkpoint_sha256": checkpoint_sha256,
-        }
-
     result = TrainingResult(metrics, history, stopper.best_epoch, stopped_epoch, diagnostics)
-    if _is_target_evasion(effective_attack):
-
-        _evaluate_target_evasion(
-            result, clean, effective_attack, labels, test_logits, target_forward
+    if _is_target_evasion(attack):
+        _evaluate_model_target_evasion(
+            result, clean, split, attack, labels, test_logits, target_forward,
+            checkpoint_path, "dvcl", config, train_seed,
         )
     return result
 
@@ -760,7 +827,29 @@ def _train_supervised(
     epochs,
     patience,
     checkpoint_path,
+    checkpoint_source=None,
 ):
+    if checkpoint_source is not None:
+        best_epoch = restore_checkpoint(
+            checkpoint_source, checkpoint_path, model, config
+        )
+        model.eval()
+        with torch.no_grad():
+            test_logits = forward()
+        metrics = classification_metrics(
+            test_logits[masks["test"]], labels[masks["test"]]
+        )
+        return TrainingResult(
+            metrics,
+            [{"epoch": best_epoch, "checkpoint_reused": True}],
+            best_epoch,
+            best_epoch,
+            {
+                "checkpoint_reused": True,
+                "checkpoint_source": str(Path(checkpoint_source).resolve()),
+                "optimizer_steps": 0,
+            },
+        )
     optimizer = torch.optim.Adam(
         model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
     )
@@ -825,14 +914,158 @@ def _is_target_evasion(attack: Optional[AttackArtifact]) -> bool:
     )
 
 
-def _is_dvcl_adaptive_request(attack: Optional[AttackArtifact]) -> bool:
+def _is_adaptive_request(attack: Optional[AttackArtifact]) -> bool:
     return bool(
         _is_target_evasion(attack)
         and attack.adaptive
-        and attack.attack_name == "dvcl_adaptive_query"
+        and attack.attack_name in {"adaptive_query", "dvcl_adaptive_query"}
         and attack.provenance.get("request_only") is True
         and attack.target_nodes is not None
     )
+
+
+def _evaluate_model_target_evasion(
+    result: TrainingResult,
+    clean: CleanGraphArtifact,
+    split: SplitArtifact,
+    attack: AttackArtifact,
+    labels: torch.Tensor,
+    clean_logits: torch.Tensor,
+    forward_for_adjs,
+    checkpoint_path: Path,
+    victim_model: str,
+    victim_config,
+    train_seed: int,
+) -> None:
+    effective_attack = attack
+    if _is_adaptive_request(attack):
+        max_additions = int(attack.provenance.get("candidate_additions", 16))
+        max_deletions = int(attack.provenance.get("candidate_deletions", 16))
+        records, adaptive_diagnostics = greedy_query_target_changes(
+            clean=clean,
+            targets=attack.target_nodes.tolist(),
+            labels=labels,
+            clean_logits=clean_logits,
+            forward_for_adjs=forward_for_adjs,
+            budget=int(attack.attack_rate),
+            seed=attack.seed,
+            max_additions=max_additions,
+            max_deletions=max_deletions,
+        )
+        checkpoint_sha256 = file_sha256(checkpoint_path)
+        search_budget = int(attack.attack_rate)
+        budgets = [
+            budget for budget in (1, 3, 5) if budget <= search_budget
+        ]
+        if search_budget not in budgets:
+            budgets.append(search_budget)
+        budget_evaluations = {}
+        full_test_clean_metrics = dict(result.metrics)
+        for budget in sorted(set(budgets)):
+            budget_records = records_at_budget(records, budget)
+            budget_attack = _materialize_adaptive_attack(
+                clean, split, attack, budget_records, budget, search_budget,
+                adaptive_diagnostics, checkpoint_path, checkpoint_sha256,
+                victim_model, victim_config, train_seed,
+            )
+            attack_path, verification_path = _adaptive_attack_paths(
+                checkpoint_path, budget, search_budget
+            )
+            save_attack_artifact(budget_attack, attack_path)
+            report = verify_attack(clean, split, budget_attack)
+            save_json(report, verification_path)
+            if not report["ok"]:
+                raise RuntimeError(
+                    "Generated adaptive attack failed verification: "
+                    + "; ".join(report["issues"])
+                )
+            metrics, evaluation = _target_evasion_values(
+                clean, budget_attack, labels, clean_logits, forward_for_adjs,
+                full_test_clean_metrics,
+            )
+            change_stats = _target_change_stats(budget_records, budget)
+            budget_evaluations[str(budget)] = {
+                "metrics": metrics,
+                "diagnostics": evaluation,
+                "adaptive_attack": {
+                    **change_stats,
+                    "queries": record_query_count(budget_records),
+                    "candidate_additions": max_additions,
+                    "candidate_deletions": max_deletions,
+                    "candidate_pool_sha256": adaptive_diagnostics[
+                        "candidate_pool_sha256"
+                    ],
+                    "path": str(attack_path),
+                    "sha256": file_sha256(attack_path),
+                },
+            }
+            if budget == search_budget:
+                effective_attack = budget_attack
+                result.metrics = metrics
+                result.diagnostics.update(evaluation)
+                result.diagnostics["adaptive_attack"] = {
+                    **adaptive_diagnostics,
+                    "path": str(attack_path),
+                    "sha256": file_sha256(attack_path),
+                    "victim_model": victim_model,
+                    "victim_checkpoint_sha256": checkpoint_sha256,
+                }
+        result.diagnostics["budget_evaluations"] = budget_evaluations
+        result.diagnostics["search_budget"] = search_budget
+        return
+    _evaluate_target_evasion(
+        result, clean, effective_attack, labels, clean_logits, forward_for_adjs
+    )
+
+
+def _materialize_adaptive_attack(
+    clean, split, request, records, budget, search_budget, adaptive_diagnostics,
+    checkpoint_path, checkpoint_sha256, victim_model, victim_config, train_seed,
+):
+    query_count = record_query_count(records)
+    value = build_attack_artifact(
+        clean=clean,
+        split=split,
+        attack_name=request.attack_name,
+        attack_rate=budget,
+        seed=request.seed,
+        perturbed=clean.hete_adjs,
+        target_nodes=request.target_nodes,
+        source=str(Path(checkpoint_path).resolve()),
+        source_sha256=checkpoint_sha256,
+        provenance={
+            **request.provenance,
+            "request_only": False,
+            "generator": "dvcl_bench.adaptive.greedy_query_target_changes",
+            "victim_model": victim_model,
+            "victim_train_seed": int(train_seed),
+            "victim_model_config": asdict(victim_config),
+            "victim_checkpoint": str(Path(checkpoint_path).resolve()),
+            "victim_checkpoint_sha256": checkpoint_sha256,
+            "search_budget": int(search_budget),
+            "evaluation_budget": int(budget),
+            "queries_for_evaluation_budget": query_count,
+            **adaptive_diagnostics,
+        },
+        threat_model="evasion",
+        scope="target",
+        adaptive=True,
+        target_changes=records,
+    )
+    value.stats["_target"] = _target_change_stats(records, budget)
+    value.provenance["queries_for_evaluation_budget"] = query_count
+    return value
+
+
+def _adaptive_attack_paths(checkpoint_path, budget, search_budget):
+    checkpoint_path = Path(checkpoint_path)
+    if budget == search_budget:
+        return (
+            checkpoint_path.with_name("adaptive_attack.pt"),
+            checkpoint_path.with_name("adaptive_attack_verification.json"),
+        )
+    root = checkpoint_path.parent / "adaptive_attacks" / f"rate_{budget}"
+    return root / "attack.pt", root / "verification.json"
 
 
 def _target_change_stats(records, budget):
@@ -847,6 +1080,10 @@ def _target_change_stats(records, budget):
         "min_changes": int(min(counts, default=0)),
         "max_changes": int(max(counts, default=0)),
         "mean_changes": float(np.mean(counts)) if counts else 0.0,
+        "budget_utilization": (
+            float(sum(counts) / (len(counts) * int(budget)))
+            if counts and int(budget) else 0.0
+        ),
     }
 
 
@@ -858,6 +1095,22 @@ def _evaluate_target_evasion(
     clean_logits: torch.Tensor,
     forward_for_adjs,
 ) -> None:
+    metrics, diagnostics = _target_evasion_values(
+        clean, attack, labels, clean_logits, forward_for_adjs,
+        dict(result.metrics),
+    )
+    result.metrics = metrics
+    result.diagnostics.update(diagnostics)
+
+
+def _target_evasion_values(
+    clean: CleanGraphArtifact,
+    attack: AttackArtifact,
+    labels: torch.Tensor,
+    clean_logits: torch.Tensor,
+    forward_for_adjs,
+    full_test_clean_metrics,
+):
     if attack.target_nodes is None or not attack.target_changes:
         raise ValueError("Target evasion requires target nodes and per-target changes")
     targets = attack.target_nodes.long().to(labels.device)
@@ -874,16 +1127,27 @@ def _evaluate_target_evasion(
             attacked_labels.append(labels[target].unsqueeze(0))
     target_logits = torch.cat(attacked_logits, dim=0)
     target_labels = torch.cat(attacked_labels, dim=0)
-    full_test_clean_metrics = dict(result.metrics)
-    result.metrics = classification_metrics(target_logits, target_labels)
-    result.diagnostics.update({
+    clean_target_logits = clean_logits[targets]
+    clean_prediction = clean_target_logits.argmax(dim=1)
+    attacked_prediction = target_logits.argmax(dim=1)
+    clean_correct = clean_prediction.eq(target_labels)
+    attack_success = clean_correct & attacked_prediction.ne(target_labels)
+    metrics = classification_metrics(target_logits, target_labels)
+    diagnostics = {
         "evaluation_scope": "target",
         "threat_model": "evasion",
         "target_count": len(attack.target_changes),
         "clean_target_metrics": clean_target_metrics,
         "full_test_clean_metrics": full_test_clean_metrics,
-        "target_accuracy_drop": clean_target_metrics["accuracy"] - result.metrics["accuracy"],
-    })
+        "target_accuracy_drop": clean_target_metrics["accuracy"] - metrics["accuracy"],
+        "clean_correct_target_count": int(clean_correct.sum()),
+        "attack_success_count": int(attack_success.sum()),
+        "attack_success_rate": (
+            float(attack_success.sum() / clean_correct.sum())
+            if bool(clean_correct.any()) else 0.0
+        ),
+    }
+    return metrics, diagnostics
 
 
 def _inputs(clean: CleanGraphArtifact, split: SplitArtifact, device):

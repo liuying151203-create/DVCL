@@ -1,7 +1,9 @@
 import argparse
 import csv
 import json
+import os
 import shlex
+import socket
 import sys
 import traceback
 from dataclasses import asdict
@@ -20,6 +22,9 @@ from dvcl_bench.paths import ExperimentLayout
 from dvcl_bench.specs import AttackSpec, ExperimentSpec, ModelSpec, SeedSpec
 
 
+CUDA_OOM_EXIT_CODE = 75
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Run one frozen DVCL benchmark experiment.")
     parser.add_argument("--protocol", default="dvcl_main")
@@ -28,6 +33,7 @@ def parse_args():
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--attack", default="clean")
     parser.add_argument("--attack-path")
+    parser.add_argument("--checkpoint-source")
     parser.add_argument("--rate", type=float, default=0)
     parser.add_argument("--threat-model", default="poisoning", choices=["poisoning", "evasion"])
     parser.add_argument("--scope", default="global", choices=["global", "target"])
@@ -66,7 +72,7 @@ def build_spec(args, extra):
     )
 
 
-def input_paths(spec, layout, attack_path=None):
+def input_paths(spec, layout, attack_path=None, checkpoint_source=None):
     values = {
         "clean": layout.clean_path(spec.dataset),
         "split": layout.split_path(spec.dataset, spec.split_name),
@@ -75,7 +81,36 @@ def input_paths(spec, layout, attack_path=None):
         values["attack"] = Path(attack_path) if attack_path else layout.attack_path(
             spec.dataset, spec.attack.name, spec.attack.rate, spec.seeds.attack
         )
+    if checkpoint_source:
+        values["checkpoint"] = Path(checkpoint_source)
     return values
+
+
+def existing_run_skip_reason(status_path, metrics_path, force=False):
+    if force or not status_path.exists():
+        return None
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    if status.get("state") == "completed" and metrics_path.exists():
+        return "completed"
+    if status.get("state") == "running":
+        owner_pid = status.get("pid")
+        owner_host = status.get("hostname")
+        if (
+            isinstance(owner_pid, int)
+            and owner_host == socket.gethostname()
+            and not process_exists(owner_pid)
+        ):
+            return None
+        return "running"
+    return None
+
+
+def process_exists(pid):
+    try:
+        os.kill(int(pid), 0)
+    except (OSError, ValueError):
+        return False
+    return True
 
 
 def main() -> int:
@@ -93,13 +128,12 @@ def main() -> int:
         )
     status_path = run_dir / "status.json"
     metrics_path = run_dir / "metrics.json"
-    if not args.force and status_path.exists() and metrics_path.exists():
-        status = json.loads(status_path.read_text(encoding="utf-8"))
-        if status.get("state") == "completed":
-            print(f"Skip completed run: {run_dir}")
-            return 0
+    skip_reason = existing_run_skip_reason(status_path, metrics_path, args.force)
+    if skip_reason:
+        print(f"Skip {skip_reason} run: {run_dir}")
+        return 0
 
-    inputs = input_paths(spec, layout, args.attack_path)
+    inputs = input_paths(spec, layout, args.attack_path, args.checkpoint_source)
     missing = [str(path) for path in inputs.values() if not path.is_file()]
     if missing:
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -115,6 +149,8 @@ def main() -> int:
     save_json({
         "state": "running",
         "started_at": datetime.now(timezone.utc).isoformat(),
+        "pid": os.getpid(),
+        "hostname": socket.gethostname(),
     }, status_path)
     try:
         resolve_device(spec.device)
@@ -142,7 +178,12 @@ def main() -> int:
             "traceback": traceback.format_exc(),
         }, status_path)
         print(traceback.format_exc(), file=sys.stderr)
-        return 1
+        return CUDA_OOM_EXIT_CODE if is_cuda_oom(exc) else 1
+
+
+def is_cuda_oom(exc):
+    value = str(exc).lower()
+    return "out of memory" in value and "cuda" in value
 
 
 def run_frozen_model(spec, inputs, run_dir):
@@ -181,7 +222,12 @@ def run_frozen_model(spec, inputs, run_dir):
                 f"artifact={artifact_semantics}, requested={requested_semantics}"
             )
         declared_victim = attack.provenance.get("victim_model")
-        if attack.adaptive and declared_victim != spec.model.name:
+        request_only = attack.provenance.get("request_only") is True
+        if (
+            attack.adaptive
+            and not request_only
+            and declared_victim != spec.model.name
+        ):
             raise ValueError(
                 "Adaptive attack victim does not match the experiment model: "
                 f"artifact={declared_victim!r}, requested={spec.model.name!r}"
@@ -209,6 +255,7 @@ def run_frozen_model(spec, inputs, run_dir):
         patience=spec.patience,
         device=spec.device,
         checkpoint_path=run_dir / "checkpoint.pt",
+        checkpoint_source=inputs.get("checkpoint"),
         **extra,
     )
     write_history(result.history, run_dir / "history.csv")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import random
+import shutil
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -258,3 +259,20 @@ def save_checkpoint(path: Path, model, config, best_epoch: int) -> None:
         "config": asdict(config),
         "best_epoch": best_epoch,
     }, Path(path))
+
+
+def restore_checkpoint(source: Path, destination: Path, model, config):
+    source = Path(source)
+    payload = torch.load(source, map_location=next(model.parameters()).device)
+    expected = asdict(config)
+    if payload.get("config") != expected:
+        raise ValueError(
+            "Checkpoint configuration does not match the requested model: "
+            f"source={source}"
+        )
+    model.load_state_dict(payload["state_dict"])
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if source.resolve() != destination.resolve():
+        shutil.copy2(source, destination)
+    return int(payload.get("best_epoch", -1))

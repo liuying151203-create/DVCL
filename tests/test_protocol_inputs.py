@@ -27,3 +27,33 @@ def test_main_protocol_has_expected_unique_inputs():
         and value["rate"] == 25
         for value in requirements
     )
+
+
+def test_adaptive_formal_protocol_includes_pattern_inputs_and_checkpoints():
+    config = CHECK_INPUTS.load_config(
+        ROOT / "configs" / "protocols" / "adaptive_target_evasion_v1.yaml"
+    )
+    requirements = list(CHECK_INPUTS.protocol_requirements(config, ROOT))
+    assert len(requirements) == 180
+    assert sum(value["kind"] == "clean" for value in requirements) == 3
+    assert sum(value["kind"] == "split" for value in requirements) == 3
+    assert sum(value["kind"] == "attack" for value in requirements) == 9
+    assert sum(value["kind"] == "checkpoint" for value in requirements) == 165
+    assert any(
+        value["kind"] == "attack"
+        and value["path"] == ROOT / (
+            "outputs/attacks/adaptive_requests_v1/cand_64/aminer/"
+            "adaptive_query/rate_5/seed_3/attack.pt"
+        )
+        for value in requirements
+    )
+    assert any(
+        value["kind"] == "checkpoint"
+        and value["model"] == "dvcl"
+        and value["train_seed"] == 5
+        and value["path"] == ROOT / (
+            "outputs/checkpoints/adaptive_clean_v1/dblp/dvcl/"
+            "train_seed_5/checkpoint.pt"
+        )
+        for value in requirements
+    )

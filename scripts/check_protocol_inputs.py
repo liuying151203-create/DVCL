@@ -32,13 +32,16 @@ def load_config(path: Path):
 
 
 def protocol_requirements(config, root=ROOT):
-    layout = ExperimentLayout(Path(root))
+    root = Path(root)
+    layout = ExperimentLayout(root)
     datasets = config.get("datasets", [config.get("dataset")])
     if not datasets or datasets == [None]:
         raise ValueError("Protocol config must define dataset or datasets")
     seeds = config.get("seeds", {})
     split_seeds = seeds.get("split", [config.get("split_seed", 1)])
     attack_seeds = seeds.get("attack", [config.get("attack_seed", 1)])
+    train_seeds = seeds.get("train", [1])
+    models = config.get("models") or [{"name": config.get("model", "")}]
     split_pattern = config.get("split_name_pattern")
     seen = set()
     for dataset in datasets:
@@ -64,28 +67,79 @@ def protocol_requirements(config, root=ROOT):
                     "split_seed": int(split_seed),
                     "path": split_path,
                 }
+            checkpoint_pattern = config.get("checkpoint_pattern")
+            if checkpoint_pattern:
+                for model in models:
+                    model_name = model["name"]
+                    for train_seed in train_seeds:
+                        checkpoint_path = _pattern_path(
+                            root,
+                            checkpoint_pattern,
+                            dataset=dataset,
+                            model=model_name,
+                            split_seed=split_seed,
+                            train_seed=train_seed,
+                        )
+                        checkpoint_key = ("checkpoint", str(checkpoint_path))
+                        if checkpoint_key in seen:
+                            continue
+                        seen.add(checkpoint_key)
+                        yield {
+                            "kind": "checkpoint",
+                            "dataset": dataset,
+                            "model": model_name,
+                            "split_seed": int(split_seed),
+                            "train_seed": int(train_seed),
+                            "path": checkpoint_path,
+                        }
             for attack in config.get("attacks", []):
                 if attack["name"] == "clean":
                     continue
                 for attack_seed in attack_seeds:
                     for rate in attack.get("rates", []):
-                        attack_path = layout.attack_path(
-                            dataset, attack["name"], rate, int(attack_seed)
-                        )
-                        attack_key = ("attack", str(attack_path), str(split_path))
-                        if attack_key in seen:
-                            continue
-                        seen.add(attack_key)
-                        yield {
-                            "kind": "attack",
-                            "dataset": dataset,
-                            "attack": attack["name"],
-                            "rate": float(rate),
-                            "attack_seed": int(attack_seed),
-                            "path": attack_path,
-                            "clean_path": clean_path,
-                            "split_path": split_path,
-                        }
+                        for model in models:
+                            model_name = model["name"]
+                            for train_seed in train_seeds:
+                                if attack.get("path_pattern"):
+                                    attack_path = _pattern_path(
+                                        root,
+                                        attack["path_pattern"],
+                                        dataset=dataset,
+                                        model=model_name,
+                                        attack=attack["name"],
+                                        variant=attack.get("variant", "default"),
+                                        rate=f"{rate:g}",
+                                        seed=attack_seed,
+                                        split_seed=split_seed,
+                                        attack_seed=attack_seed,
+                                        train_seed=train_seed,
+                                    )
+                                else:
+                                    attack_path = layout.attack_path(
+                                        dataset, attack["name"], rate,
+                                        int(attack_seed),
+                                    )
+                                attack_key = (
+                                    "attack", str(attack_path), str(split_path)
+                                )
+                                if attack_key in seen:
+                                    continue
+                                seen.add(attack_key)
+                                yield {
+                                    "kind": "attack",
+                                    "dataset": dataset,
+                                    "attack": attack["name"],
+                                    "rate": float(rate),
+                                    "attack_seed": int(attack_seed),
+                                    "path": attack_path,
+                                    "clean_path": clean_path,
+                                    "split_path": split_path,
+                                }
+
+
+def _pattern_path(root: Path, pattern: str, **values):
+    path = Path(pattern.format(**values))
+    return path if path.is_absolute() else root / path
 
 
 def audit_protocol_inputs(config, root=ROOT):
@@ -110,7 +164,7 @@ def audit_protocol_inputs(config, root=ROOT):
                     raise ValueError("split name identity mismatch")
                 if artifact.seed != requirement["split_seed"]:
                     raise ValueError("split seed identity mismatch")
-            else:
+            elif requirement["kind"] == "attack":
                 clean = load_clean_artifact(requirement["clean_path"])
                 split = load_split_artifact(requirement["split_path"])
                 artifact = load_attack_artifact(path)
@@ -118,6 +172,11 @@ def audit_protocol_inputs(config, root=ROOT):
                 row["verification"] = verification
                 if not verification["ok"]:
                     raise ValueError("; ".join(verification["issues"]))
+            elif requirement["kind"] == "checkpoint":
+                if not path.is_file():
+                    raise FileNotFoundError(path)
+            else:
+                raise ValueError(f"Unsupported input kind: {requirement['kind']}")
             row["sha256"] = file_sha256(path)
             row["ok"] = True
         except Exception as exc:

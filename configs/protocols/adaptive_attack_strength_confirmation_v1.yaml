@@ -1,0 +1,51 @@
+protocol: adaptive_attack_strength_confirmation_v1
+device: cuda:0
+selection:
+  path: /home/liuying/project/DVCL/outputs/analysis/adaptive_attack_strength_screen_v1/selection.json
+  sha256: cdf16651cf69cfb0323dce523b52206206d7909a1084dcaaeb6d43c8764879d8
+  candidate_additions: 64
+  candidate_deletions: 64
+evaluation_budgets:
+- 1
+- 3
+- 5
+datasets:
+- acm
+- dblp
+models:
+- name: han
+  backend: native
+  config_path: configs/models/han.yaml
+- name: heteroguard
+  backend: native
+  config_path: configs/models/heteroguard.yaml
+- name: hseco
+  backend: native
+  config_path: configs/models/hseco_native.yaml
+- name: dvcl
+  backend: native
+  config_path: configs/models/dvcl.yaml
+split_name_pattern: paper_seed_{seed}
+checkpoint_pattern: outputs/checkpoints/adaptive_clean_v1/{dataset}/{model}/train_seed_{train_seed}/checkpoint.pt
+attacks:
+- name: adaptive_query
+  variant: cand_64
+  rates:
+  - 5
+  threat_model: evasion
+  scope: target
+  adaptive: true
+  path_pattern: outputs/pilots/adaptive_confirmation_requests/cand_64/{dataset}/adaptive_query/rate_{rate}/seed_{attack_seed}/attack.pt
+seeds:
+  split:
+  - 1
+  attack:
+  - 1
+  - 2
+  - 3
+  train:
+  - 1
+  - 2
+training:
+  epochs: 200
+  patience: 100
