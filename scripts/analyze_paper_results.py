@@ -563,7 +563,7 @@ def _final_document(
         "2. 多攻击种子复验支持 DVCL 相对 HSeCo 的 ACM/DBLP 总体增益，但不支持 DVCL 在每个数据集、每种攻击上普遍最优。",
         "3. DVCL 在 DBLP PRBCD 平均下低于 HSeCo；ACM 相对 HAN/HeteroSAGE 的多种子差异未达到校正后显著。",
         "4. HG 固定迁移攻击、自适应查询攻击和 poisoning 具有不同语义，禁止合并计算总 Attack Average。",
-        "5. 后续优先扩展自适应候选池、报告 clean-correct ASR，并增加 targeted PRBCD 或梯度目标攻击。",
+        "5. 后续先将模型自适应攻击扩展到全部基线，再根据视图失效诊断改进 DVCL；完整阶段与矩阵见 `docs/next-experiment-plan.md`。",
         "",
         "## 7. 论文图表",
         "",
@@ -581,6 +581,7 @@ def _final_document(
         "- 目标逃逸逐模型结果：`docs/target-evasion-results.md`",
         "- 鲁棒/OpenHGNN/RND 基线：`docs/robust-baseline-results.md`、`docs/openhgnn-baseline-results.md`、`docs/rnd-attack-results.md`",
         "- 文档导航与口径优先级：`docs/README.md`",
+        "- 当前有效后续实验计划：`docs/next-experiment-plan.md`",
         "",
     ])
     return "\n".join(lines)

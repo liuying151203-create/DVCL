@@ -5,8 +5,9 @@
 ## 1. 必读入口
 
 1. `final-experiment-results.md`：唯一论文结果主入口，包含实验设置、主表、统计检验、消融、异常结果审计和结论边界。
-2. `reproducibility.md`：环境、Git、协议、artifact 与结果哈希冻结及复现命令。
-3. `../README.md`：项目安装、数据准备和命令入口。
+2. `next-experiment-plan.md`：当前有效的后续开发顺序、正式矩阵和验收标准。
+3. `reproducibility.md`：环境、Git、协议、artifact 与结果哈希冻结及复现命令。
+4. `../README.md`：项目安装、数据准备和命令入口。
 
 ## 2. 结果附录
 
@@ -35,7 +36,7 @@
 
 ## 4. 工程历史
 
-`development-roadmap.md`、`experiment-expansion.md` 和 `experiment-run-log.md` 记录阶段性规划与执行过程，不作为当前实验完成度或论文结论依据。
+`development-roadmap.md`、`experiment-expansion.md` 和 `experiment-run-log.md` 记录阶段性规划与执行过程，不作为当前实验完成度、后续顺序或论文结论依据。
 
 ## 5. 口径规则
 

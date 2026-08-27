@@ -26,6 +26,7 @@ artifact_roots:
 analysis_paths:
   - docs/final-experiment-results.md
   - docs/README.md
+  - docs/next-experiment-plan.md
   - docs/acm-experiment-results.md
   - docs/dblp-experiment-results.md
   - docs/aminer-experiment-results.md
