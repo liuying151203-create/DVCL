@@ -59,6 +59,10 @@ def test_partitioned_eta_uses_slowest_attack_queue():
     )
     assert pooled == pytest.approx(9600)
     assert partitioned == pytest.approx(14400)
+    scaled = estimate_historical_eta(
+        pending, durations, workers=3, partition_by_attack=True
+    )
+    assert scaled == pytest.approx(7200)
 
 
 def test_partitioned_eta_is_not_overridden_by_aggregate_throughput():

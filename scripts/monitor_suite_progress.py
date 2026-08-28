@@ -121,10 +121,33 @@ def estimate_historical_eta(
         ))
     if not partition_by_attack:
         return sum(duration for _, duration in estimates) / workers
-    partitions = defaultdict(float)
+    partitions = defaultdict(list)
     for attack, duration in estimates:
-        partitions[attack] += duration
-    return max(partitions.values())
+        partitions[attack].append(duration)
+    if workers < len(partitions):
+        return sum(duration for _, duration in estimates) / workers
+    allocations = {attack: 1 for attack in partitions}
+    for _ in range(workers - len(partitions)):
+        attack = max(
+            partitions,
+            key=lambda name: (
+                _scheduled_makespan(partitions[name], allocations[name])
+                - _scheduled_makespan(partitions[name], allocations[name] + 1)
+            ),
+        )
+        allocations[attack] += 1
+    return max(
+        _scheduled_makespan(values, allocations[attack])
+        for attack, values in partitions.items()
+    )
+
+
+def _scheduled_makespan(durations, workers):
+    slots = [0.0] * workers
+    for duration in sorted(durations, reverse=True):
+        index = min(range(workers), key=slots.__getitem__)
+        slots[index] += duration
+    return max(slots, default=0.0)
 
 
 def add_eta(snapshot, history):
