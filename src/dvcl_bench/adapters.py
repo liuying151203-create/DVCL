@@ -58,6 +58,7 @@ from .training import (
     save_checkpoint,
     set_random_seed,
 )
+from .view_diagnostics import target_view_diagnostics
 
 
 def train_han(
@@ -677,6 +678,9 @@ def train_dvcl(
             test_logits, topology, feature = model(
                 features, last_graph, feature_graph
             )
+            clean_view_state = _dvcl_view_state(
+                model, test_logits, topology, feature
+            )
         metrics = classification_metrics(
             test_logits[masks["test"]], labels[masks["test"]]
         )
@@ -714,9 +718,31 @@ def train_dvcl(
                     )
                 return model.classify(attacked_topology, feature)[0]
 
+            def target_diagnostic_forward(adjs, record):
+                attacked_transitions = transition_edges(
+                    features, adjs, clean.meta_paths, similarity
+                )
+                attacked_graph = dgl.from_scipy(semantic_graph(
+                    attacked_transitions,
+                    last_attention.to(target),
+                    config.global_threshold,
+                )).to(target)
+                attacked_topology = None
+                if config.view_mode in {"both", "both_nocl", "topo"}:
+                    attacked_topology = model.topology_encoder(
+                        features, attacked_graph
+                    )
+                attacked_logits = model.classify(attacked_topology, feature)[0]
+                return _dvcl_target_view_state(
+                    model, attacked_logits, attacked_topology, feature,
+                    int(record["target"]),
+                )
+
             _evaluate_model_target_evasion(
                 result, clean, split, attack, labels, test_logits, target_forward,
                 checkpoint_path, "dvcl", config, train_seed,
+                clean_view_state=clean_view_state,
+                diagnostic_forward_for_adjs=target_diagnostic_forward,
             )
         return result
     stopper = LegacyEarlyStopping(patience)
@@ -786,6 +812,7 @@ def train_dvcl(
     model.eval()
     with torch.no_grad():
         test_logits, topology, feature = model(features, last_graph, feature_graph)
+        clean_view_state = _dvcl_view_state(model, test_logits, topology, feature)
     metrics = classification_metrics(test_logits[masks["test"]], labels[masks["test"]])
     save_checkpoint(checkpoint_path, holder, config, stopper.best_epoch)
     diagnostics = {
@@ -809,11 +836,30 @@ def train_dvcl(
                 topology = model.topology_encoder(features, attacked_graph)
             return model.classify(topology, feature)[0]
 
+        def target_diagnostic_forward(adjs, record):
+            attacked_transitions = transition_edges(
+                features, adjs, clean.meta_paths, similarity
+            )
+            attacked_graph = dgl.from_scipy(semantic_graph(
+                attacked_transitions, last_attention.to(target),
+                config.global_threshold,
+            )).to(target)
+            attacked_topology = None
+            if config.view_mode in {"both", "both_nocl", "topo"}:
+                attacked_topology = model.topology_encoder(features, attacked_graph)
+            attacked_logits = model.classify(attacked_topology, feature)[0]
+            return _dvcl_target_view_state(
+                model, attacked_logits, attacked_topology, feature,
+                int(record["target"]),
+            )
+
     result = TrainingResult(metrics, history, stopper.best_epoch, stopped_epoch, diagnostics)
     if _is_target_evasion(attack):
         _evaluate_model_target_evasion(
             result, clean, split, attack, labels, test_logits, target_forward,
             checkpoint_path, "dvcl", config, train_seed,
+            clean_view_state=clean_view_state,
+            diagnostic_forward_for_adjs=target_diagnostic_forward,
         )
     return result
 
@@ -936,6 +982,8 @@ def _evaluate_model_target_evasion(
     victim_model: str,
     victim_config,
     train_seed: int,
+    clean_view_state=None,
+    diagnostic_forward_for_adjs=None,
 ) -> None:
     effective_attack = attack
     if _is_adaptive_request(attack):
@@ -982,6 +1030,8 @@ def _evaluate_model_target_evasion(
             metrics, evaluation = _target_evasion_values(
                 clean, budget_attack, labels, clean_logits, forward_for_adjs,
                 full_test_clean_metrics,
+                clean_view_state=clean_view_state,
+                diagnostic_forward_for_adjs=diagnostic_forward_for_adjs,
             )
             change_stats = _target_change_stats(budget_records, budget)
             budget_evaluations[str(budget)] = {
@@ -1014,7 +1064,9 @@ def _evaluate_model_target_evasion(
         result.diagnostics["search_budget"] = search_budget
         return
     _evaluate_target_evasion(
-        result, clean, effective_attack, labels, clean_logits, forward_for_adjs
+        result, clean, effective_attack, labels, clean_logits, forward_for_adjs,
+        clean_view_state=clean_view_state,
+        diagnostic_forward_for_adjs=diagnostic_forward_for_adjs,
     )
 
 
@@ -1094,10 +1146,14 @@ def _evaluate_target_evasion(
     labels: torch.Tensor,
     clean_logits: torch.Tensor,
     forward_for_adjs,
+    clean_view_state=None,
+    diagnostic_forward_for_adjs=None,
 ) -> None:
     metrics, diagnostics = _target_evasion_values(
         clean, attack, labels, clean_logits, forward_for_adjs,
         dict(result.metrics),
+        clean_view_state=clean_view_state,
+        diagnostic_forward_for_adjs=diagnostic_forward_for_adjs,
     )
     result.metrics = metrics
     result.diagnostics.update(diagnostics)
@@ -1110,6 +1166,8 @@ def _target_evasion_values(
     clean_logits: torch.Tensor,
     forward_for_adjs,
     full_test_clean_metrics,
+    clean_view_state=None,
+    diagnostic_forward_for_adjs=None,
 ):
     if attack.target_nodes is None or not attack.target_changes:
         raise ValueError("Target evasion requires target nodes and per-target changes")
@@ -1119,11 +1177,19 @@ def _target_evasion_values(
     )
     attacked_logits = []
     attacked_labels = []
+    attacked_view_states = []
     with torch.no_grad():
         for record in attack.target_changes:
             target = int(record["target"])
-            logits = forward_for_adjs(apply_target_change(clean, record), record)
-            attacked_logits.append(logits[target].unsqueeze(0))
+            attacked_adjs = apply_target_change(clean, record)
+            if diagnostic_forward_for_adjs is None:
+                logits = forward_for_adjs(attacked_adjs, record)
+                target_logits = logits[target]
+            else:
+                view_state = diagnostic_forward_for_adjs(attacked_adjs, record)
+                target_logits = view_state["fused_logits"]
+                attacked_view_states.append(view_state)
+            attacked_logits.append(target_logits.unsqueeze(0))
             attacked_labels.append(labels[target].unsqueeze(0))
     target_logits = torch.cat(attacked_logits, dim=0)
     target_labels = torch.cat(attacked_labels, dim=0)
@@ -1147,7 +1213,33 @@ def _target_evasion_values(
             if bool(clean_correct.any()) else 0.0
         ),
     }
+    if clean_view_state is not None and attacked_view_states:
+        diagnostics["view_diagnostics"] = target_view_diagnostics(
+            clean_view_state, attacked_view_states, labels
+        )
     return metrics, diagnostics
+
+
+def _dvcl_view_state(model, fused_logits, topology, feature):
+    result = {"fused_logits": fused_logits}
+    if topology is not None:
+        result["topology_embedding"] = topology
+    if feature is not None:
+        result["feature_embedding"] = feature
+    result.update(model.diagnostic_views(topology, feature))
+    return result
+
+
+def _dvcl_target_view_state(model, fused_logits, topology, feature, target):
+    values = _dvcl_view_state(model, fused_logits, topology, feature)
+    return {
+        "target": int(target),
+        **{
+            key: value[target].detach()
+            for key, value in values.items()
+            if isinstance(value, torch.Tensor)
+        },
+    }
 
 
 def _inputs(clean: CleanGraphArtifact, split: SplitArtifact, device):

@@ -93,7 +93,14 @@ def formal_config(candidate_size: int, selection_path: Path):
             "train_seed_{train_seed}/checkpoint.pt"
         ),
         "attacks": [attack(candidate_size, "outputs/attacks/adaptive_requests_v1")],
-        "seeds": {"split": [1], "attack": [1, 2, 3], "train": [1, 2, 3, 4, 5]},
+        "seeds": {
+            "split": [1],
+            "pairs": [
+                {"attack": 1, "train": 1},
+                {"attack": 2, "train": 2},
+                {"attack": 3, "train": 3},
+            ],
+        },
         "training": {"epochs": 200, "patience": 100},
     }
 

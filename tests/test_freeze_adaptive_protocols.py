@@ -33,12 +33,17 @@ def test_confirmation_protocol_has_48_searches_and_144_evaluations(tmp_path: Pat
     assert all("cand_64" in command for command in commands)
 
 
-def test_formal_protocol_has_495_searches_and_1485_evaluations(tmp_path: Path):
+def test_formal_protocol_has_99_searches_and_297_evaluations(tmp_path: Path):
     config = formal_config(64, selection_file(tmp_path))
     commands = list(RUN_SUITE.commands(config, "python", ROOT))
-    assert len(commands) == 495
+    assert len(commands) == 99
     assert config["evaluation_budgets"] == [1, 3, 5]
     assert all("--checkpoint-source" in command for command in commands)
     assert {command[command.index("--dataset") + 1] for command in commands} == {
         "acm", "dblp", "aminer"
     }
+    assert config["seeds"]["pairs"] == [
+        {"attack": 1, "train": 1},
+        {"attack": 2, "train": 2},
+        {"attack": 3, "train": 3},
+    ]

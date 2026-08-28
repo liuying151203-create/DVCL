@@ -1,10 +1,10 @@
 # 攻击威胁模型审计报告
 
-审计日期：2026-08-05；状态更新：2026-08-24。
+审计日期：2026-08-05；状态更新：2026-08-28。
 
 HG Baseline target evasion 的 artifact、验证、clean-train/attacked-test Trainer 分支和
-三数据集正式矩阵均已完成；ACM/DBLP 共 330 次，AMiner 共 165 次。另已完成 DVCL
-有限候选模型自适应目标攻击 30 次。当前结果和限制以 `docs/final-experiment-results.md` 为准。
+三数据集 HG 正式矩阵均已完成；ACM/DBLP 共 330 次，AMiner 共 165 次。统一 11 模型
+有限候选自适应目标攻击也已完成 99/99 次物理搜索和 297/297 个预算评估。当前结果和限制以 `docs/final-experiment-results.md` 为准。
 
 ## 1. 结论
 
@@ -42,7 +42,7 @@ ACM/DBLP 的 11 模型正式矩阵已完成 330/330 次并通过完整性审计�
 | PRBCD | Poisoning | 全局扰动率 5%–25% | 修正配置正式实验已完成 |
 | HetePRBCD | Poisoning | 全局扰动率 5%–25% | 修正配置正式实验已完成 |
 | HG Baseline | Evasion | 每个目标节点的扰动预算 $\Delta\in\{1,3,5\}$ | ACM/DBLP/AMiner 已完成 |
-| DVCL Adaptive | Evasion | 每个目标节点的最大预算 $\Delta\in\{1,3,5\}$ | ACM/DBLP 有限候选版本已完成 |
+| Adaptive Query | Evasion | 每个目标节点的最大预算 $\Delta\in\{1,3,5\}$ | 三数据集 11 模型 64+64 候选版本已完成 |
 
 HG Baseline 在 ACM 和 DBLP 上攻击 Paper–Author（P–A）边，在 AMiner 上攻击
 Paper–Reference（P–R）边。三套数据的目标逃逸 artifact 均已完成并通过验证。
@@ -110,11 +110,11 @@ clean 图训练、clean checkpoint 恢复、全局扰动图测试。现有攻击
 `adaptive: false` 的 transfer evasion 输入复用；若要做自适应攻击，则需针对每个
 模型和 seed 重新生成攻击。
 
-当前 DVCL 自适应扩展已经按 checkpoint 独立生成攻击，但只查询每目标最多 16 条候选
-增边与 16 条候选删边，并且 $\Delta$ 是最大预算而非强制预算。该结果属于有限候选、
+当前正式自适应扩展已经对 11 个模型按 checkpoint 独立生成攻击，每目标查询 64 条候选
+增边与 64 条候选删边，并且 $\Delta$ 是最大预算而非强制预算。该结果属于有限候选、
 score-based 的模型自适应攻击，不应表述为完整候选空间的最强梯度白盒攻击。
 
-四个 trainer 都需要显式接收 `threat_model`，并分别构建训练图和测试图。输出应同时
+各模型 trainer 都显式接收 `threat_model`，并分别构建训练图和测试图。输出同时
 保存 clean-test 与 attacked-test 指标，汇总器在攻击行使用 attacked-test 指标。
 若全局攻击全部改为 evasion，现有 520 个 poisoning 攻击运行需要在新输出目录重跑，
 60 个 clean 运行仍可作为参考。

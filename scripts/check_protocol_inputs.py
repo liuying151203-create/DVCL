@@ -39,8 +39,10 @@ def protocol_requirements(config, root=ROOT):
         raise ValueError("Protocol config must define dataset or datasets")
     seeds = config.get("seeds", {})
     split_seeds = seeds.get("split", [config.get("split_seed", 1)])
-    attack_seeds = seeds.get("attack", [config.get("attack_seed", 1)])
-    train_seeds = seeds.get("train", [1])
+    attack_seeds = _seed_values(
+        seeds, "attack", [config.get("attack_seed", 1)]
+    )
+    train_seeds = _seed_values(seeds, "train", [1])
     models = config.get("models") or [{"name": config.get("model", "")}]
     split_pattern = config.get("split_name_pattern")
     seen = set()
@@ -135,6 +137,22 @@ def protocol_requirements(config, root=ROOT):
                                     "clean_path": clean_path,
                                     "split_path": split_path,
                                 }
+
+
+def _seed_values(seeds, name, default):
+    pairs = seeds.get("pairs")
+    if pairs is None:
+        return seeds.get(name, default)
+    values = []
+    for index, pair in enumerate(pairs):
+        if not isinstance(pair, dict) or "attack" not in pair or "train" not in pair:
+            raise ValueError(
+                f"seeds.pairs[{index}] must define integer attack and train seeds"
+            )
+        value = int(pair[name])
+        if value not in values:
+            values.append(value)
+    return values
 
 
 def _pattern_path(root: Path, pattern: str, **values):

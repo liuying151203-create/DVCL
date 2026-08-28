@@ -4,11 +4,12 @@
 
 ## 1. 当前基线
 
-- 已完成 12 套协议、4025/4025 次运行，包括三数据集统一 11 模型 poisoning、RND、HG 迁移目标逃逸、多攻击种子复验和 ACM 消融。
+- 已完成 13 套协议、4124/4124 次物理运行，包括三数据集统一 11 模型 poisoning、RND、HG 迁移目标逃逸、多攻击种子复验、ACM 消融和正式模型自适应目标逃逸。
 - HG Baseline 使用固定 artifact，不针对被评估模型优化。
 - 阶段 A 已完成：统一 `adaptive_query` 已接入 11 个模型，并复用 165 个经哈希审计的 clean checkpoint。
 - 阶段 B 已完成：候选筛选和 50 目标确认分别达到 12/12 与 48/48 次物理搜索，正式冻结每目标 64 条候选增边和 64 条候选删边；144/144 个 $\Delta\in\{1,3,5\}$ 预算评估审计通过。
-- 阶段 C 已启动：`adaptive_target_evasion_v1` 在 ACM、DBLP、AMiner 上执行 11 模型正式矩阵，共 495 次物理搜索和 1485 个预算评估。
+- 阶段 C 已验收：`adaptive_target_evasion_v1` 在 ACM、DBLP、AMiner 上完成 11 模型正式矩阵，99/99 次物理搜索和 297/297 个预算评估通过审计，候选池哈希异常和无效结果均为 0；此前已完成的额外 DVCL 条件保留为补充结果，不进入正式统计。
+- 阶段 D 已完成实验准备但尚未运行：冻结 5 种视图模式的单种子预检，共 15 次 clean checkpoint 训练、60 次攻击评估和 90 个逻辑攻击结果。
 
 ## 2. 总体原则
 
@@ -82,17 +83,16 @@
 | 数据集 | ACM、DBLP、AMiner |
 | 模型 | 统一 11 模型 |
 | 预算 | $\Delta=1,3,5$ |
-| 训练种子 | 1–5 |
-| 候选 seed | 1–3 |
+| 配对重复 | $(s_a,s_t)=(1,1),(2,2),(3,3)$ |
 | 目标 | 公共目标集；另统计 clean-correct 子集 |
 
-完整矩阵为 $11\times3\times3\times5\times3=1485$ 个模型攻击评估单元。它们应复用 $11\times3\times5=165$ 个 clean checkpoint，而不是重复完成 1485 次训练。
+正式矩阵为 $11\times3\times3\times3=297$ 个模型攻击评估单元，对应 99 次物理搜索；每次搜索复用 checkpoint 并沿同一贪心轨迹评估 $\Delta=1,3,5$。配对重复只需复用 $11\times3\times3=99$ 个 clean checkpoint，不重复训练模型。原 495 次全交叉设计因查询成本过高而取消，已生成的非配对 DVCL 条件仅作补充分析，不混入正式均值与标准差。
 
 ### 结果表
 
 - 主表：每个模型的 clean target Micro-F1、$\Delta=1,3,5$ Micro-F1 和 Drop@5。
 - 攻击审计表：ASR、实际改边数、预算利用率、查询次数和候选规模。
-- 统计：按训练种子与候选 seed 配对，报告下降幅度、置信区间和 Holm 校正显著性。
+- 统计：按预注册的 $(s_a,s_t)$ 配对重复报告下降幅度、置信区间和 Holm 校正显著性；如出现异常条件，再定向追加重复。
 
 ## 6. 阶段 D：DVCL 失效诊断
 
@@ -112,6 +112,30 @@
 - gate 权重分布及其与攻击成功的关系。
 
 只有当结果证明 topology view 在攻击下明显失真而 feature view 相对稳定时，才进入动态特征权重防御。
+
+### 已冻结的预检协议
+
+| 维度 | 取值 |
+|---|---|
+| 数据集 | ACM、DBLP、AMiner |
+| 模式 | `topo`、`feat`、`concat`、`gate`、`gated_concat` |
+| 攻击 | HG Baseline 与模型自适应查询攻击 |
+| 预算 | $\Delta=1,3,5$ |
+| 预检种子 | $(s_a,s_t)=(1,1)$ |
+| 候选池 | 每目标 64 条增边和 64 条删边 |
+
+预检先训练 15 个 clean checkpoint，再执行 45 次 HG 迁移评估和 15 次自适应物理搜索；自适应搜索沿同一轨迹输出三个预算，因此共有 90 个逻辑攻击结果。诊断额外记录同一 checkpoint 下的分支置零 Micro-F1、真实类 margin、拓扑/特征 embedding 漂移、双视图预测分歧和 gate 权重，不改变训练目标和攻击选边。
+
+```bash
+source scripts/activate_gpu_env.sh
+python scripts/run_suite.py \
+  --config configs/protocols/dvcl_view_diagnosis_clean_pilot_v1.yaml
+python scripts/run_suite.py \
+  --config configs/protocols/dvcl_view_diagnosis_pilot_v1.yaml
+python scripts/analyze_dvcl_view_diagnosis.py
+```
+
+预检完成后按以下门槛决定是否扩展到 3 个配对种子：DBLP 的 topology drift 和 margin 损失应明显高于 feature view，且 `feat` 或门控模式的攻击后 Micro-F1 优于 `concat`；ACM/AMiner 则重点排查零下降来自 feature view 稳定、融合分类边界冗余，还是有限候选池未覆盖有效结构边。若证据不一致，不进入阶段 E，而是先扩大候选池或补白盒梯度诊断。
 
 ## 7. 阶段 E：DVCL 防御改进
 
@@ -141,4 +165,4 @@
 
 ## 10. 开工顺序
 
-阶段 A、B 已验收，当前执行阶段 C。正式矩阵完整审计后，先依据阶段 D 诊断解释模型差异，再决定是否进入阶段 E 的 DVCL 改进；不得在完整自适应基线形成前提前调整防御结构。
+阶段 A、B、C 已全部验收，阶段 D 的代码、协议和输入已准备完成。下一步按顺序运行 15 次 clean checkpoint 训练和 60 次诊断评估，先解释 ACM/AMiner 中 DVCL 零成功扰动与 DBLP 明显下降的视图差异，再决定是否进入阶段 E；不得仅依据有限候选攻击下的零下降直接宣称普遍鲁棒性。

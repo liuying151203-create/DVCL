@@ -82,6 +82,39 @@ class DualViewContrastiveDefense(nn.Module):
             representation = feature
         return self.classifier(representation), topology, feature
 
+    def diagnostic_views(self, topology, feature):
+        result = {}
+        gate_weight = None
+        if self.view_mode in {"both", "both_nocl"}:
+            if topology is None or feature is None:
+                raise ValueError("Both embeddings are required")
+            if self.fusion_mode in {"gate", "gated_concat"}:
+                gate_weight = self.gate(torch.cat((topology, feature), dim=1))
+            if self.fusion_mode == "concat":
+                zeros = torch.zeros_like(topology)
+                topology_representation = torch.cat((topology, zeros), dim=1)
+                feature_representation = torch.cat((zeros, feature), dim=1)
+            elif self.fusion_mode == "gated_concat":
+                zeros = torch.zeros_like(topology)
+                topology_representation = torch.cat((
+                    gate_weight * topology, zeros,
+                ), dim=1)
+                feature_representation = torch.cat((
+                    zeros, (1 - gate_weight) * feature,
+                ), dim=1)
+            else:
+                topology_representation = gate_weight * topology
+                feature_representation = (1 - gate_weight) * feature
+            result["topology_logits"] = self.classifier(topology_representation)
+            result["feature_logits"] = self.classifier(feature_representation)
+        elif self.view_mode == "topo":
+            result["topology_logits"] = self.classifier(topology)
+        else:
+            result["feature_logits"] = self.classifier(feature)
+        if gate_weight is not None:
+            result["gate_weight"] = gate_weight
+        return result
+
 
 def build_feature_knn_graph(features: Tensor, k: int, mode: str = "directed"):
     import dgl

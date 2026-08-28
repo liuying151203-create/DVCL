@@ -10,6 +10,7 @@ protocol_configs:
   - configs/protocols/aminer_hg_baseline_target_evasion_v1.yaml
   - configs/protocols/acm_dblp_attack_seed_recheck_v1.yaml
   - configs/protocols/dvcl_adaptive_target_evasion_v1.yaml
+  - configs/protocols/adaptive_target_evasion_v1.yaml
   - configs/suites/acm_poisoning_ablation_v1.yaml
 
 artifact_roots:
@@ -22,6 +23,7 @@ artifact_roots:
   - data/attacks/acm
   - data/attacks/dblp
   - data/attacks/aminer
+  - outputs/attacks/adaptive_requests_v1
 
 analysis_paths:
   - docs/final-experiment-results.md
@@ -35,3 +37,5 @@ analysis_paths:
   - docs/openhgnn-baseline-results.md
   - docs/rnd-attack-results.md
   - docs/figures/paper
+  - outputs/analysis/adaptive_target_evasion_v1
+  - outputs/paper_analysis

@@ -1,0 +1,53 @@
+protocol: dvcl_view_diagnosis_clean_pilot_v1
+device: cuda:0
+
+datasets:
+  - acm
+  - dblp
+  - aminer
+
+model: dvcl
+backend: native
+model_config_path: configs/models/dvcl.yaml
+split_name_pattern: paper_seed_{seed}
+
+variants:
+  - name: topo
+    model_config:
+      view_mode: topo
+      fusion_mode: concat
+      lambda_dvcl: 0.0
+  - name: feat
+    model_config:
+      view_mode: feat
+      fusion_mode: concat
+      lambda_dvcl: 0.0
+  - name: concat
+    model_config:
+      view_mode: both
+      fusion_mode: concat
+      lambda_dvcl: 1.0
+  - name: gate
+    model_config:
+      view_mode: both
+      fusion_mode: gate
+      lambda_dvcl: 1.0
+  - name: gated_concat
+    model_config:
+      view_mode: both
+      fusion_mode: gated_concat
+      lambda_dvcl: 1.0
+
+attacks:
+  - name: clean
+    rates: [0]
+
+seeds:
+  split: [1]
+  pairs:
+    - attack: 1
+      train: 1
+
+training:
+  epochs: 200
+  patience: 100

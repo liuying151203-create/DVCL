@@ -16,7 +16,7 @@
 | `acm-experiment-results.md` | ACM 单攻击种子主实验与消融明细 |
 | `dblp-experiment-results.md` | DBLP 单攻击种子主实验明细 |
 | `aminer-experiment-results.md` | AMiner 十一模型完整结果与攻击有效性审计 |
-| `target-evasion-results.md` | ACM、DBLP、AMiner 目标逃逸逐模型结果 |
+| `target-evasion-results.md` | ACM、DBLP、AMiner 的 HG 迁移攻击与 11 模型自适应目标逃逸结果 |
 | `robust-baseline-results.md` | RoHe、HeteroGuard、FastRoHGCN |
 | `openhgnn-baseline-results.md` | HGT、MAGNN、HeCo、SimpleHGN |
 | `rnd-attack-results.md` | RND poisoning |

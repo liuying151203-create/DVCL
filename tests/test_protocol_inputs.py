@@ -34,11 +34,11 @@ def test_adaptive_formal_protocol_includes_pattern_inputs_and_checkpoints():
         ROOT / "configs" / "protocols" / "adaptive_target_evasion_v1.yaml"
     )
     requirements = list(CHECK_INPUTS.protocol_requirements(config, ROOT))
-    assert len(requirements) == 180
+    assert len(requirements) == 114
     assert sum(value["kind"] == "clean" for value in requirements) == 3
     assert sum(value["kind"] == "split" for value in requirements) == 3
     assert sum(value["kind"] == "attack" for value in requirements) == 9
-    assert sum(value["kind"] == "checkpoint" for value in requirements) == 165
+    assert sum(value["kind"] == "checkpoint" for value in requirements) == 99
     assert any(
         value["kind"] == "attack"
         and value["path"] == ROOT / (
@@ -50,10 +50,14 @@ def test_adaptive_formal_protocol_includes_pattern_inputs_and_checkpoints():
     assert any(
         value["kind"] == "checkpoint"
         and value["model"] == "dvcl"
-        and value["train_seed"] == 5
+        and value["train_seed"] == 3
         and value["path"] == ROOT / (
             "outputs/checkpoints/adaptive_clean_v1/dblp/dvcl/"
-            "train_seed_5/checkpoint.pt"
+            "train_seed_3/checkpoint.pt"
         )
+        for value in requirements
+    )
+    assert not any(
+        value["kind"] == "checkpoint" and value["train_seed"] in {4, 5}
         for value in requirements
     )

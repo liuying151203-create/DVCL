@@ -26,3 +26,17 @@ def test_directed_knn_has_exact_out_degree():
     features = torch.eye(5)
     graph = build_feature_knn_graph(features, 2, "directed")
     assert graph.num_edges() == 10
+
+
+@pytest.mark.parametrize("fusion_mode", ["concat", "gate", "gated_concat"])
+def test_dvcl_view_diagnostics_match_classifier_shape(fusion_mode):
+    features = torch.randn(6, 4)
+    graph = build_feature_knn_graph(features, 2)
+    model = DualViewContrastiveDefense(
+        4, 3, 2, 2, 0.0, view_mode="both", fusion_mode=fusion_mode
+    )
+    _, topology, feature = model(features, graph, graph)
+    diagnostics = model.diagnostic_views(topology, feature)
+    assert diagnostics["topology_logits"].shape == (6, 2)
+    assert diagnostics["feature_logits"].shape == (6, 2)
+    assert ("gate_weight" in diagnostics) == (fusion_mode != "concat")

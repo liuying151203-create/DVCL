@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -268,6 +269,67 @@ def test_adaptive_clean_and_strength_pilot_suite_sizes():
     assert len(commands) == 432
     assert all("--checkpoint-source" in command for command in commands)
     assert all("--adaptive" in command for command in commands)
+
+
+def test_formal_adaptive_suite_uses_three_paired_seed_repeats():
+    config = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" / "adaptive_target_evasion_v1.yaml"
+    )
+    commands = list(RUN_SUITE.commands(config, "python", ROOT))
+    assert len(commands) == 99
+    assert {
+        (
+            command[command.index("--attack-seed") + 1],
+            command[command.index("--train-seed") + 1],
+        )
+        for command in commands
+    } == {("1", "1"), ("2", "2"), ("3", "3")}
+
+
+def test_dvcl_view_diagnosis_pilot_sizes_and_variants():
+    clean = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" / "dvcl_view_diagnosis_clean_pilot_v1.yaml"
+    )
+    evaluation = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" / "dvcl_view_diagnosis_pilot_v1.yaml"
+    )
+    clean_commands = list(RUN_SUITE.commands(clean, "python", ROOT))
+    evaluation_commands = list(RUN_SUITE.commands(evaluation, "python", ROOT))
+    assert len(clean_commands) == 15
+    assert len(evaluation_commands) == 60
+    variants = {"topo", "feat", "concat", "gate", "gated_concat"}
+    assert {
+        json.loads(command[command.index("--model-config-json") + 1])["variant"]
+        for command in evaluation_commands
+    } == variants
+    assert sum("--adaptive" in command for command in evaluation_commands) == 15
+    assert all("--checkpoint-source" in command for command in evaluation_commands)
+    for command in evaluation_commands:
+        model_config = json.loads(
+            command[command.index("--model-config-json") + 1]
+        )
+        checkpoint = command[command.index("--checkpoint-source") + 1]
+        assert f"/dvcl/{model_config['variant']}/clean/" in checkpoint
+
+
+def test_seed_filters_preserve_configured_pairs():
+    config = {
+        "datasets": ["acm"],
+        "models": [{"name": "han"}],
+        "attacks": [{"name": "clean"}],
+        "seeds": {
+            "split": [1],
+            "pairs": [
+                {"attack": 1, "train": 1},
+                {"attack": 2, "train": 2},
+            ],
+        },
+    }
+    selected = RUN_SUITE.select_seeds(config, attack=[2], train=[2])
+    commands = list(RUN_SUITE.commands(selected, "python", ROOT))
+    assert len(commands) == 1
+    assert commands[0][commands[0].index("--attack-seed") + 1] == "2"
+    assert commands[0][commands[0].index("--train-seed") + 1] == "2"
 
 
 def test_cuda_oom_is_retried_without_retrying_other_failures():

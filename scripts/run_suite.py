@@ -120,17 +120,74 @@ def select_seeds(config, split=None, attack=None, train=None):
         return config
     result = dict(config)
     seeds = dict(config.get("seeds", {}))
+    pairs = seeds.get("pairs")
+    available_from_pairs = {}
+    if pairs is not None:
+        normalized_pairs = _normalize_seed_pairs(pairs)
+        available_from_pairs = {
+            "attack": {pair["attack"] for pair in normalized_pairs},
+            "train": {pair["train"] for pair in normalized_pairs},
+        }
     for name, selected in (("split", split), ("attack", attack), ("train", train)):
         if not selected:
             continue
         selected = set(selected)
-        available = set(seeds.get(name, [1]))
+        available = available_from_pairs.get(name, set(seeds.get(name, [1])))
         missing = selected - available
         if missing:
             raise ValueError(f"Unknown selected {name} seeds: {sorted(missing)}")
-        seeds[name] = [value for value in seeds.get(name, [1]) if value in selected]
+        if name == "split" or pairs is None:
+            seeds[name] = [value for value in seeds.get(name, [1]) if value in selected]
+    if pairs is not None:
+        normalized_pairs = [
+            pair for pair in normalized_pairs
+            if (not attack or pair["attack"] in set(attack))
+            and (not train or pair["train"] in set(train))
+        ]
+        if not normalized_pairs:
+            raise ValueError("Seed selection leaves no configured attack/train pairs")
+        seeds["pairs"] = normalized_pairs
     result["seeds"] = seeds
     return result
+
+
+def _normalize_seed_pairs(pairs):
+    normalized = []
+    seen = set()
+    for index, pair in enumerate(pairs):
+        if not isinstance(pair, dict) or "attack" not in pair or "train" not in pair:
+            raise ValueError(
+                f"seeds.pairs[{index}] must define integer attack and train seeds"
+            )
+        value = {"attack": int(pair["attack"]), "train": int(pair["train"])}
+        key = (value["attack"], value["train"])
+        if key in seen:
+            raise ValueError(f"Duplicate attack/train seed pair: {key}")
+        seen.add(key)
+        normalized.append(value)
+    if not normalized:
+        raise ValueError("seeds.pairs must not be empty")
+    return normalized
+
+
+def seed_dimensions(config):
+    seeds = config.get("seeds", {})
+    split_seeds = [int(value) for value in seeds.get("split", [1])]
+    if "pairs" in seeds:
+        if "attack" in seeds or "train" in seeds:
+            raise ValueError(
+                "Use either seeds.pairs or Cartesian seeds.attack/seeds.train, not both"
+            )
+        pairs = _normalize_seed_pairs(seeds["pairs"])
+        return [
+            (split_seed, pair["attack"], pair["train"])
+            for split_seed, pair in itertools.product(split_seeds, pairs)
+        ]
+    return list(itertools.product(
+        split_seeds,
+        [int(value) for value in seeds.get("attack", [1])],
+        [int(value) for value in seeds.get("train", [1])],
+    ))
 
 
 def commands(config, python_bin, base_dir=ROOT):
@@ -144,11 +201,10 @@ def commands(config, python_bin, base_dir=ROOT):
         config["datasets"],
         config["models"],
         config["attacks"],
-        seeds.get("split", [1]),
-        seeds.get("attack", [1]),
-        seeds.get("train", [1]),
+        seed_dimensions(config),
     )
-    for dataset, model, attack, split_seed, attack_seed, train_seed in dimensions:
+    for dataset, model, attack, seed_values in dimensions:
+        split_seed, attack_seed, train_seed = seed_values
         rates = [0] if attack["name"] == "clean" else attack.get("rates", [])
         model_config = resolve_model_config(model, Path(base_dir))
         for rate in rates:
@@ -163,21 +219,37 @@ def commands(config, python_bin, base_dir=ROOT):
 
 def ablation_commands(config, python_bin):
     training = config.get("training", {})
-    split_seed = int(config.get("split_seed", 1))
-    attack_seed = int(config.get("attack_seed", 1))
-    for variant, attack, train_seed in itertools.product(
-        config["variants"], config["attacks"], config.get("train_seeds", [1])
+    datasets = config.get("datasets", [config.get("dataset")])
+    if any(dataset is None for dataset in datasets):
+        raise ValueError("Ablation suites must define dataset or datasets")
+    if "seeds" in config:
+        seeds = seed_dimensions(config)
+    else:
+        seeds = list(itertools.product(
+            [int(config.get("split_seed", 1))],
+            [int(config.get("attack_seed", 1))],
+            [int(value) for value in config.get("train_seeds", [1])],
+        ))
+    model_defaults = resolve_model_config({
+        "config_path": config.get("model_config_path"),
+        "config": config.get("model_config", {}),
+    }, ROOT)
+    for dataset, variant, attack, seed_values in itertools.product(
+        datasets, config["variants"], config["attacks"], seeds
     ):
+        split_seed, attack_seed, train_seed = seed_values
         rates = attack.get("rates", [0] if attack["name"] == "clean" else [])
-        model_config = dict(variant.get("model_config", {}))
+        model_config = {**model_defaults, **variant.get("model_config", {})}
         model_config["variant"] = variant["name"]
         for rate in rates:
             yield command_for(
-                python_bin, config.get("protocol", "dvcl_main"), config["dataset"],
+                python_bin, config.get("protocol", "dvcl_main"), dataset,
                 config["model"], config.get("backend", "native"), attack, rate,
                 split_seed, attack_seed, train_seed, training,
                 config.get("device", "cuda:0"), model_config,
-                config.get("split_name", f"paper_seed_{split_seed}"),
+                config.get(
+                    "split_name_pattern", config.get("split_name", "paper_seed_{seed}")
+                ).format(seed=split_seed),
                 config.get("checkpoint_pattern"),
             )
 
@@ -225,6 +297,7 @@ def command_for(
             attack["path_pattern"].format(
                 dataset=dataset, model=model, attack=attack["name"],
                 variant=attack.get("variant", "default"),
+                model_variant=model_config.get("variant", "default"),
                 rate=f"{rate:g}", seed=attack_seed,
                 split_seed=split_seed, attack_seed=attack_seed,
                 train_seed=train_seed,
@@ -236,6 +309,7 @@ def command_for(
             checkpoint_pattern.format(
                 dataset=dataset, model=model, attack=attack["name"],
                 variant=attack.get("variant", "default"), rate=f"{rate:g}",
+                model_variant=model_config.get("variant", "default"),
                 seed=attack_seed, split_seed=split_seed,
                 attack_seed=attack_seed, train_seed=train_seed,
             ),

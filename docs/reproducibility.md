@@ -6,7 +6,7 @@
 
 - Git 提交和工作树状态；
 - Python、Torch、CUDA、DGL、PyG、GPU、驱动和全部 Python 包版本；
-- 12 套论文协议、4025 次运行的完整性审计；
+- 13 套论文协议、4124 次物理运行的完整性审计；
 - clean、split、PRBCD、HetePRBCD、RND、HG 和自适应请求 artifact 哈希；
 - 各协议 `metrics.json` 与 `manifest.json` 的集合哈希；
 - 最终结果文档与 PNG/PDF 图表哈希。
@@ -31,7 +31,7 @@ python scripts/freeze_reproducibility.py
 验收条件：
 
 - `outputs/reproducibility/final_manifest.json` 中 `publication_ready=true`；
-- 12 套协议全部 `completed=expected`，合计 4025/4025；
+- 13 套协议全部 `completed=expected`，合计 4124/4124；正式自适应矩阵另展开为 297/297 个预算结果；
 - `git.dirty=false`；
 - `cuda_available=true`；
 - `git diff --check` 和完整 PyTest 通过。
@@ -59,6 +59,14 @@ python scripts/run_suite.py \
 python scripts/run_suite.py \
   --config configs/protocols/dvcl_adaptive_target_evasion_v1.yaml \
   --continue-on-error
+
+python scripts/run_adaptive_pool.py \
+  --config configs/protocols/adaptive_target_evasion_v1.yaml \
+  --device cuda:0 --device cuda:1 --device cuda:2 \
+  --continue-on-error --oom-retries 12 --oom-retry-delay 300
+python scripts/analyze_adaptive_pilot.py \
+  --config configs/protocols/adaptive_target_evasion_v1.yaml \
+  --output-root outputs/analysis/adaptive_target_evasion_v1
 ```
 
 Runner 自动跳过已完成运行；需要覆盖时显式添加 `--force`。
@@ -71,7 +79,7 @@ python scripts/analyze_paper_results.py
 
 该命令生成：
 
-- `outputs/paper_analysis/*.csv`：逐条件汇总、下降幅度、显著性、平均排名、实际预算利用率和 AMiner 攻击审计；
+- `outputs/paper_analysis/*.csv`：逐条件汇总、下降幅度、显著性、平均排名、实际预算利用率、正式自适应矩阵和 AMiner 攻击审计；
 - `docs/final-experiment-results.md`：最终统计章节；
 - `docs/aminer-experiment-results.md`：AMiner 11 模型结果；
 - `docs/target-evasion-results.md`：迁移与自适应目标逃逸结果；

@@ -2,10 +2,13 @@ import argparse
 import csv
 import importlib.util
 import json
+import math
 import statistics
 import sys
 from collections import defaultdict
 from pathlib import Path
+
+from scipy.stats import rankdata, t, wilcoxon
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +17,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from dvcl_bench.paths import ExperimentLayout
+from dvcl_bench.paper_analysis import holm_adjust
 from dvcl_bench.specs import AttackSpec, ExperimentSpec, ModelSpec, SeedSpec
 
 
@@ -186,6 +190,102 @@ def aggregate_rows(rows):
     return output
 
 
+def adaptive_average_ranks(rows):
+    grouped = defaultdict(dict)
+    for row in rows:
+        key = (
+            row["dataset"], row["rate"], row["attack_seed"], row["train_seed"]
+        )
+        grouped[key][row["model"]] = row["attacked_target_micro_f1"]
+    samples = defaultdict(list)
+    for key, values in grouped.items():
+        models = sorted(values)
+        ranks = rankdata([-values[model] for model in models], method="average")
+        for model, rank in zip(models, ranks):
+            samples[(key[0], model)].append(float(rank))
+    return [
+        {
+            "dataset": dataset,
+            "model": model,
+            "conditions": len(values),
+            "average_rank": statistics.fmean(values),
+        }
+        for (dataset, model), values in sorted(samples.items())
+    ]
+
+
+def paired_reference_comparisons(rows, reference="dvcl"):
+    by_dataset_seed_model = defaultdict(list)
+    for row in rows:
+        key = (
+            row["dataset"], row["attack_seed"], row["train_seed"], row["model"]
+        )
+        by_dataset_seed_model[key].append(row["attacked_target_micro_f1"])
+    models = sorted({row["model"] for row in rows if row["model"] != reference})
+    comparisons = []
+    for dataset in sorted({row["dataset"] for row in rows}):
+        seeds = sorted({
+            (row["attack_seed"], row["train_seed"])
+            for row in rows if row["dataset"] == dataset
+        })
+        dataset_rows = []
+        for baseline in models:
+            differences = []
+            for attack_seed, train_seed in seeds:
+                reference_values = by_dataset_seed_model.get(
+                    (dataset, attack_seed, train_seed, reference)
+                )
+                baseline_values = by_dataset_seed_model.get(
+                    (dataset, attack_seed, train_seed, baseline)
+                )
+                if not reference_values or not baseline_values:
+                    continue
+                differences.append(
+                    statistics.fmean(reference_values)
+                    - statistics.fmean(baseline_values)
+                )
+            if not differences:
+                continue
+            ci_low, ci_high = _mean_t_interval(differences)
+            dataset_rows.append({
+                "dataset": dataset,
+                "reference": reference,
+                "baseline": baseline,
+                "n": len(differences),
+                "effect_pp": 100 * statistics.fmean(differences),
+                "effect_ci_low_pp": 100 * ci_low,
+                "effect_ci_high_pp": 100 * ci_high,
+                "wins": sum(value > 1e-12 for value in differences),
+                "ties": sum(abs(value) <= 1e-12 for value in differences),
+                "losses": sum(value < -1e-12 for value in differences),
+                "p_value": _wilcoxon_pvalue(differences),
+            })
+        adjusted = holm_adjust([row["p_value"] for row in dataset_rows])
+        for row, p_holm in zip(dataset_rows, adjusted):
+            row["p_holm"] = p_holm
+            row["significant_0_05"] = p_holm < 0.05
+        comparisons.extend(dataset_rows)
+    return comparisons
+
+
+def _mean_t_interval(values, confidence=0.95):
+    mean = statistics.fmean(values)
+    if len(values) < 2:
+        return mean, mean
+    deviation = statistics.stdev(values)
+    if deviation == 0:
+        return mean, mean
+    critical = float(t.ppf((1 + confidence) / 2, len(values) - 1))
+    margin = critical * deviation / math.sqrt(len(values))
+    return mean - margin, mean + margin
+
+
+def _wilcoxon_pvalue(differences):
+    if all(abs(value) <= 1e-12 for value in differences):
+        return 1.0
+    return float(wilcoxon(differences, alternative="two-sided").pvalue)
+
+
 def choose_candidate(summary, tolerance: float):
     sizes = sorted({int(row["candidate_size"]) for row in summary})
     if not sizes:
@@ -282,8 +382,12 @@ def main() -> int:
     expected = expected_runs * len(evaluation_budgets or [None])
     hash_issues = validate_candidate_hashes(rows)
     summary = aggregate_rows(rows)
+    ranks = adaptive_average_ranks(rows)
+    significance = paired_reference_comparisons(rows)
     write_csv(output_root / "runs.csv", rows)
     write_csv(output_root / "summary.csv", summary)
+    write_csv(output_root / "average_ranks.csv", ranks)
+    write_csv(output_root / "significance.csv", significance)
     selection = None
     if summary and not issues and not hash_issues:
         selected, selection_diagnostics = choose_candidate(

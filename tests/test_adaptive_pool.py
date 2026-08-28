@@ -46,7 +46,7 @@ def test_required_audits_must_be_complete(tmp_path: Path):
         POOL.validate_audits(confirmation, inputs)
 
 
-def test_formal_suite_expands_to_495_prioritized_runs():
+def test_formal_suite_expands_to_99_prioritized_runs():
     run_suite = POOL.load_run_suite()
     config = run_suite.load_config(
         ROOT / "configs" / "protocols" / "adaptive_target_evasion_v1.yaml"
@@ -54,5 +54,5 @@ def test_formal_suite_expands_to_495_prioritized_runs():
     commands = POOL.prioritize_commands(
         list(run_suite.commands(config, "python", ROOT))
     )
-    assert len(commands) == 495
+    assert len(commands) == 99
     assert POOL.options(commands[0])["--model"] == "dvcl"

@@ -8,6 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
@@ -20,6 +22,12 @@ from dvcl_bench.paper_analysis import (
     target_summary,
 )
 from dvcl_bench.artifacts import load_attack_artifact
+from scripts.analyze_adaptive_pilot import (
+    adaptive_average_ranks,
+    aggregate_rows as aggregate_adaptive_rows,
+    collect_rows as collect_adaptive_rows,
+    paired_reference_comparisons,
+)
 
 
 MULTI_SEED_PROTOCOL = "acm_dblp_attack_seed_recheck_v1"
@@ -43,6 +51,8 @@ TARGET_PROTOCOLS = (
 )
 CLEAN_PROTOCOLS = ("acm_poisoning_main_v1", "dblp_poisoning_main_v1")
 ABLATION_PROTOCOL = "acm_poisoning_ablation_v1"
+ADAPTIVE_PROTOCOL = "adaptive_target_evasion_v1"
+ADAPTIVE_CONFIG = ROOT / "configs" / "protocols" / f"{ADAPTIVE_PROTOCOL}.yaml"
 EXPECTED_PROTOCOL_RUNS = {
     "acm_poisoning_main_v1": 220,
     "dblp_poisoning_main_v1": 220,
@@ -55,6 +65,7 @@ EXPECTED_PROTOCOL_RUNS = {
     "hg_baseline_target_evasion_v1": 330,
     "acm_dblp_attack_seed_recheck_v1": 720,
     "dvcl_adaptive_target_evasion_v1": 30,
+    "adaptive_target_evasion_v1": 99,
     "acm_poisoning_ablation_v1": 140,
 }
 MODEL_ORDER = (
@@ -122,6 +133,18 @@ def main() -> int:
     aminer = _aminer_family_rows(rows, targets)
     ablation = _ablation_rows(rows)
     adaptive_budget = _adaptive_budget_rows(run_root)
+    adaptive_rows, adaptive_issues, adaptive_expected, adaptive_completed = (
+        collect_adaptive_rows(ADAPTIVE_CONFIG)
+    )
+    if adaptive_issues or adaptive_expected != 99 or adaptive_completed != 99:
+        raise ValueError(
+            "Incomplete formal adaptive matrix: "
+            f"expected={adaptive_expected} completed={adaptive_completed} "
+            f"issues={adaptive_issues}"
+        )
+    adaptive_summary = aggregate_adaptive_rows(adaptive_rows)
+    adaptive_significance = paired_reference_comparisons(adaptive_rows)
+    adaptive_ranks = adaptive_average_ranks(adaptive_rows)
     aminer_audit = _aminer_attack_audit(aminer)
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -135,6 +158,9 @@ def main() -> int:
     _write_csv(output_dir / "aminer_family_summary.csv", aminer)
     _write_csv(output_dir / "ablation_summary.csv", ablation)
     _write_csv(output_dir / "adaptive_budget_summary.csv", adaptive_budget)
+    _write_csv(output_dir / "adaptive_target_summary.csv", adaptive_summary)
+    _write_csv(output_dir / "adaptive_target_significance.csv", adaptive_significance)
+    _write_csv(output_dir / "adaptive_target_ranks.csv", adaptive_ranks)
     _write_csv(output_dir / "aminer_attack_audit.csv", aminer_audit)
     (output_dir / "analysis_manifest.json").write_text(
         json.dumps({
@@ -146,8 +172,11 @@ def main() -> int:
             "benchmark_runs": len(benchmark_rows),
             "multi_seed_runs": len(multi_rows),
             "target_runs": len(target_rows),
+            "adaptive_physical_runs": adaptive_completed,
+            "adaptive_logical_results": len(adaptive_rows),
             "significance_test": "paired two-sided Wilcoxon signed-rank",
             "multiple_testing": "Holm family-wise correction",
+            "adaptive_effect_ci": "paired mean Student-t 95% confidence interval",
         }, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
@@ -156,8 +185,8 @@ def main() -> int:
     (docs_dir / "final-experiment-results.md").write_text(
         _final_document(
             benchmark_summary, benchmark_family, multi_family, significance,
-            ranks, targets, ablation, adaptive_budget, aminer_audit,
-            protocol_counts,
+            ranks, targets, ablation, adaptive_summary, adaptive_significance,
+            adaptive_ranks, aminer_audit, protocol_counts,
         ),
         encoding="utf-8",
     )
@@ -166,10 +195,15 @@ def main() -> int:
         encoding="utf-8",
     )
     (docs_dir / "target-evasion-results.md").write_text(
-        _target_document(targets, adaptive_budget), encoding="utf-8"
+        _target_document(
+            targets, adaptive_summary, adaptive_significance, adaptive_ranks
+        ),
+        encoding="utf-8",
     )
     if not args.skip_figures:
-        _write_figures(Path(args.figure_dir), multi_summary, ranks, targets)
+        _write_figures(
+            Path(args.figure_dir), multi_summary, ranks, adaptive_summary
+        )
     print(
         f"Wrote paper analysis: multi_seed={len(multi_rows)} "
         f"targets={len(target_rows)} output={output_dir}"
@@ -180,6 +214,11 @@ def main() -> int:
 def _validate_protocol_counts(rows):
     counts = defaultdict(int)
     for row in rows:
+        if row["protocol"] == ADAPTIVE_PROTOCOL and (
+            row["attack_seed"] != row["train_seed"]
+            or row["attack_seed"] not in (1, 2, 3)
+        ):
+            continue
         counts[row["protocol"]] += 1
     issues = [
         f"{protocol}: expected={expected}, actual={counts[protocol]}"
@@ -434,7 +473,8 @@ def _score(row):
 
 def _final_document(
     benchmark, benchmark_family, multi_family, significance, ranks, targets,
-    ablation, adaptive_budget, aminer_audit, protocol_counts,
+    ablation, adaptive, adaptive_significance, adaptive_ranks, aminer_audit,
+    protocol_counts,
 ):
     completed = sum(row["completed"] for row in protocol_counts)
     lines = [
@@ -449,7 +489,7 @@ def _final_document(
         "| 全局 poisoning 主实验 | ACM、DBLP、AMiner | 统一 11 模型 | $s_{atk}=1,s_{train}=1\\ldots5$ | PRBCD、HetePRBCD、RND 主比较 |",
         "| HG 迁移目标逃逸 | ACM、DBLP、AMiner | 统一 11 模型 | artifact seed 1，$s_{train}=1\\ldots5$ | 测试时固定攻击迁移性 |",
         "| 多攻击种子统计复验 | ACM、DBLP | HAN、HeteroSAGE、HSeCo、DVCL | $s_{atk}=1\\ldots3,s_{train}=1\\ldots5$ | 显著性与攻击种子稳定性 |",
-        "| DVCL 模型自适应逃逸 | ACM、DBLP | 仅 DVCL | $s_{train}=1\\ldots5$ | checkpoint 专项压力测试 |",
+        "| 模型自适应目标逃逸 | ACM、DBLP、AMiner | 统一 11 模型 | $(s_a,s_t)=(1,1),(2,2),(3,3)$ | 每模型独立优化攻击边 |",
         "| 组件消融 | ACM | DVCL 四个 variant | $s_{train}=1\\ldots5$ | 模块贡献 |",
         "",
         "统一训练设置为 $E_{max}=200$、$P=100$ 和完整模型 checkpoint。Poisoning 扰动率为 $r\\in\\{5,10,15,20,25\\}\\%$；目标逃逸预算为 $\\Delta\\in\\{1,3,5\\}$。表格报告均值 ± 样本标准差。",
@@ -516,17 +556,26 @@ def _final_document(
     lines.extend([
         "固定 HG artifact 不针对每个被评估模型优化，因此个别负下降表示少量错误预测被扰动纠正，不能解释为自适应鲁棒性。",
         "",
-        "### 4.2 DVCL 有限候选模型自适应攻击",
+        "### 4.2 统一十一模型自适应攻击",
         "",
-        "该实验只评估 DVCL，不与上面的十一模型迁移表合并。$\\Delta$ 是每个目标允许的最大改边数；攻击仅查询最多 16 条候选增边和 16 条候选删边。",
+        "每个模型与 checkpoint 独立执行 score-based 贪心查询；相同数据集和 seed 共享候选池，但最终攻击边由 victim 模型决定。每目标候选池为 64 条增边和 64 条删边，$\\Delta\\in\\{1,3,5\\}$ 为最大预算。正式矩阵包含 99 次物理搜索和 297 个预算评估；权威审计为 `outputs/analysis/adaptive_target_evasion_v1/audit.json`。",
         "",
     ])
-    lines.extend(_adaptive_table(targets))
-    lines.extend(["", "**实际预算利用率**", ""])
-    lines.extend(_adaptive_budget_table(adaptive_budget))
+    for dataset in ("acm", "dblp", "aminer"):
+        lines.extend([f"#### {dataset.upper()}", ""])
+        lines.extend(_formal_adaptive_table(adaptive, dataset))
+        lines.append("")
+    lines.extend(["**攻击有效性诊断（跨 11 模型均值）**", ""])
+    lines.extend(_formal_adaptive_diagnostic_table(adaptive))
+    lines.extend(["", "**平均排名与最近竞争基线**", ""])
+    lines.extend(_formal_adaptive_rank_table(adaptive_ranks))
+    lines.append("")
+    lines.extend(_formal_adaptive_key_significance_table(
+        adaptive_significance, adaptive_ranks
+    ))
     lines.extend([
         "",
-        "ACM 的低预算利用率说明当前候选池已饱和，其小幅下降不足以证明强自适应鲁棒性；DBLP 的明显下降确认了 DVCL 的目标逃逸脆弱性。",
+        "ACM 和 AMiner 中 DVCL 在当前 64+64 有限候选攻击下未出现目标 Micro-F1 下降，但这只能说明该查询攻击未找到成功扰动，不能证明完整候选空间或白盒攻击下的鲁棒性。DBLP 中 DVCL 在 $\\Delta=5$ 下降 46.00 个百分点，且平均排名低于 HeteroGuard，确认 DVCL 存在数据集依赖的自适应目标逃逸脆弱性。每数据集只有 3 个独立配对重复，Holm 校正后均未达到显著，效应量和置信区间应与排名共同解释。",
         "",
         "## 5. ACM 组件消融",
         "",
@@ -563,7 +612,7 @@ def _final_document(
         "2. 多攻击种子复验支持 DVCL 相对 HSeCo 的 ACM/DBLP 总体增益，但不支持 DVCL 在每个数据集、每种攻击上普遍最优。",
         "3. DVCL 在 DBLP PRBCD 平均下低于 HSeCo；ACM 相对 HAN/HeteroSAGE 的多种子差异未达到校正后显著。",
         "4. HG 固定迁移攻击、自适应查询攻击和 poisoning 具有不同语义，禁止合并计算总 Attack Average。",
-        "5. 后续先将模型自适应攻击扩展到全部基线，再根据视图失效诊断改进 DVCL；完整阶段与矩阵见 `docs/next-experiment-plan.md`。",
+        "5. 统一 11 模型自适应矩阵已完成；下一步按 topology/feature 视图漂移和预测分歧开展 DVCL 失效诊断，再决定是否改进门控融合。",
         "",
         "## 7. 论文图表",
         "",
@@ -573,7 +622,7 @@ def _final_document(
         "",
         "![多种子平均排名](figures/paper/multi_seed_average_rank.png)",
         "",
-        "![DVCL 自适应目标逃逸](figures/paper/dvcl_adaptive_target_evasion.png)",
+        "![十一模型自适应目标逃逸](figures/paper/adaptive_target_evasion_11model.png)",
         "",
         "## 8. 专项附录",
         "",
@@ -716,6 +765,122 @@ def _adaptive_budget_table(rows):
     return lines
 
 
+def _adaptive_score(row):
+    return (
+        f"{100 * row['attacked_target_micro_f1_mean']:.2f} ± "
+        f"{100 * row['attacked_target_micro_f1_std']:.2f}"
+    )
+
+
+def _formal_adaptive_table(rows, dataset):
+    lines = [
+        "| Model | Clean target | $\\Delta=1$ | $\\Delta=3$ | $\\Delta=5$ | Drop@5 |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for model in MODEL_ORDER:
+        selected = [
+            _lookup(rows, dataset=dataset, model=model, rate=rate)
+            for rate in (1, 3, 5)
+        ]
+        clean = selected[0]
+        lines.append(
+            f"| {MODEL_LABELS[model]} | "
+            f"{100 * clean['clean_target_micro_f1_mean']:.2f} ± "
+            f"{100 * clean['clean_target_micro_f1_std']:.2f} | "
+            + " | ".join(_adaptive_score(row) for row in selected)
+            + f" | {100 * selected[-1]['micro_f1_drop_mean']:+.2f} |"
+        )
+    return lines
+
+
+def _formal_adaptive_diagnostic_table(rows):
+    lines = [
+        "| Dataset | $\\Delta$ | ASR | Budget utilization | Changes | Queries |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for dataset in ("acm", "dblp", "aminer"):
+        for rate in (1, 3, 5):
+            selected = [
+                row for row in rows
+                if row["dataset"] == dataset and row["rate"] == rate
+            ]
+            lines.append(
+                f"| {dataset.upper()} | {rate} | "
+                f"{100 * statistics.fmean(row['attack_success_rate_mean'] for row in selected):.2f}% | "
+                f"{100 * statistics.fmean(row['budget_utilization_mean'] for row in selected):.2f}% | "
+                f"{statistics.fmean(row['total_changes_mean'] for row in selected):.1f} | "
+                f"{statistics.fmean(row['queries_mean'] for row in selected):.1f} |"
+            )
+    return lines
+
+
+def _formal_adaptive_rank_table(rows):
+    lines = [
+        "| Dataset | Best model | Best rank | DVCL rank |",
+        "|---|---|---:|---:|",
+    ]
+    for dataset in ("acm", "dblp", "aminer"):
+        selected = sorted(
+            (row for row in rows if row["dataset"] == dataset),
+            key=lambda row: row["average_rank"],
+        )
+        best = selected[0]
+        dvcl = _lookup(rows, dataset=dataset, model="dvcl")
+        lines.append(
+            f"| {dataset.upper()} | {MODEL_LABELS[best['model']]} | "
+            f"{best['average_rank']:.2f} | {dvcl['average_rank']:.2f} |"
+        )
+    return lines
+
+
+def _formal_adaptive_key_significance_table(significance, ranks):
+    lines = [
+        "正效应表示 DVCL 的三预算平均攻击后 Micro-F1 更高；95% CI 为三个配对重复的均值 t 区间。",
+        "",
+        "| Dataset | Baseline | $n$ | Effect (pp) [95% CI] | W/T/L | $p_{Holm}$ |",
+        "|---|---|---:|---:|---:|---:|",
+    ]
+    for dataset in ("acm", "dblp", "aminer"):
+        competitors = sorted(
+            (
+                row for row in ranks
+                if row["dataset"] == dataset and row["model"] != "dvcl"
+            ),
+            key=lambda row: row["average_rank"],
+        )
+        baseline = competitors[0]["model"]
+        row = _lookup(significance, dataset=dataset, baseline=baseline)
+        lines.append(
+            f"| {dataset.upper()} | {MODEL_LABELS[baseline]} | {row['n']} | "
+            f"{row['effect_pp']:+.2f} "
+            f"[{row['effect_ci_low_pp']:+.2f}, {row['effect_ci_high_pp']:+.2f}] | "
+            f"{row['wins']}/{row['ties']}/{row['losses']} | {row['p_holm']:.3g} |"
+        )
+    return lines
+
+
+def _formal_adaptive_significance_table(rows):
+    lines = [
+        "| Dataset | Baseline | $n$ | Effect (pp) [95% CI] | W/T/L | $p_{Holm}$ |",
+        "|---|---|---:|---:|---:|---:|",
+    ]
+    dataset_order = {name: index for index, name in enumerate(("acm", "dblp", "aminer"))}
+    model_order = {name: index for index, name in enumerate(MODEL_ORDER)}
+    for row in sorted(
+        rows,
+        key=lambda value: (
+            dataset_order[value["dataset"]], model_order[value["baseline"]]
+        ),
+    ):
+        lines.append(
+            f"| {row['dataset'].upper()} | {MODEL_LABELS[row['baseline']]} | "
+            f"{row['n']} | {row['effect_pp']:+.2f} "
+            f"[{row['effect_ci_low_pp']:+.2f}, {row['effect_ci_high_pp']:+.2f}] | "
+            f"{row['wins']}/{row['ties']}/{row['losses']} | {row['p_holm']:.3g} |"
+        )
+    return lines
+
+
 def _aminer_table_lines(aminer):
     lines = [
         "| Model | Clean | PRBCD Avg. | HetePRBCD Avg. | RND Avg. | HG $\\Delta=5$ |",
@@ -836,7 +1001,7 @@ def _attack_rate_table_lines(summary, dataset, attack):
     return lines
 
 
-def _target_document(targets, adaptive_budget):
+def _target_document(targets, adaptive, adaptive_significance, adaptive_ranks):
     lines = [
         "# 目标逃逸实验结果",
         "",
@@ -845,8 +1010,9 @@ def _target_document(targets, adaptive_budget):
         "## 1. 实验设置",
         "",
         "- HG Baseline：模型在 clean 图训练，测试时替换目标节点攻击图，`adaptive=false`。",
-        "- DVCL Adaptive：每个 checkpoint 独立执行有限候选、score-based 贪心查询，`adaptive=true`。",
-        "- 扰动预算：$\\Delta\\in\\{1,3,5\\}$ 是每目标上限，不保证完全用满；训练种子 1–5。",
+        "- Adaptive Query：11 个模型分别绑定自身 checkpoint，独立执行 score-based 贪心查询，`adaptive=true`。",
+        "- 候选池：每目标 64 条候选增边和 64 条候选删边；相同数据集和 seed 跨模型共享候选池。",
+        "- 扰动预算：$\\Delta\\in\\{1,3,5\\}$ 是每目标上限；正式配对重复为 $(s_a,s_t)=(1,1),(2,2),(3,3)$。",
         "",
         "## 2. HG Baseline",
         "",
@@ -879,28 +1045,41 @@ def _target_document(targets, adaptive_budget):
                 + f" | {rows[-1]['drop_pp_mean']:+.2f} |"
             )
         lines.append("")
-    lines.extend(["## 3. DVCL 模型自适应攻击", ""])
-    lines.extend(_adaptive_table(targets))
+    lines.extend(["## 3. 统一十一模型自适应攻击", ""])
+    for dataset in ("acm", "dblp", "aminer"):
+        lines.extend([f"### {dataset.upper()}", ""])
+        lines.extend(_formal_adaptive_table(adaptive, dataset))
+        lines.append("")
     lines.extend([
-        "",
-        "### 实际预算利用率",
+        "### 攻击有效性诊断",
         "",
     ])
-    lines.extend(_adaptive_budget_table(adaptive_budget))
+    lines.extend(_formal_adaptive_diagnostic_table(adaptive))
+    lines.extend(["", "### 平均排名", ""])
+    lines.extend(_formal_adaptive_rank_table(adaptive_ranks))
+    lines.extend([
+        "",
+        "### DVCL 与全部基线的配对比较",
+        "",
+        "每个数据集先在同一 seed 内对 $\\Delta=1,3,5$ 的攻击后 Micro-F1 求均值，再以 3 个配对 seed 做双侧 Wilcoxon 检验；Holm 校正在每个数据集的 10 个基线比较内执行。95% CI 为配对均值差的 t 区间。",
+        "",
+    ])
+    lines.extend(_formal_adaptive_significance_table(adaptive_significance))
     lines.extend([
         "",
         "## 4. 分析与限制",
         "",
         "1. HG Baseline 衡量固定攻击的跨模型迁移效果，不能替代自适应鲁棒性结论。",
-        "2. 当前自适应攻击与具体 checkpoint 绑定并直接优化 DVCL 分类间隔，但每个目标仅查询最多 16 条候选增边和 16 条候选删边，不等同于完整白盒最强攻击。",
-        "3. ACM 的预算利用率低且存在整组零改边种子，因此较小下降属于攻击强度不足下的结果；DBLP 的明显下降能够确认目标逃逸脆弱性。",
-        "4. 不同数据集的目标集合规模不同，只在同一数据集内比较模型和扰动预算。",
+        "2. 正式自适应攻击与每个 victim checkpoint 绑定，但仍是 64+64 有限候选查询，不等同于完整候选空间或梯度白盒最强攻击。",
+        "3. DVCL 在 ACM、AMiner 当前攻击下无观察到的成功扰动；该结果必须表述为有限候选攻击未成功，不能升级为普遍鲁棒性。",
+        "4. DBLP 中 DVCL Drop@5 为 46.00 个百分点，平均排名 2.22，低于 HeteroGuard 的 1.06，说明其自适应脆弱性具有数据集依赖性。",
+        "5. 每数据集只有 3 个独立配对重复，Holm 校正后无显著比较；正式结论应同时报告效应量、CI、排名和攻击诊断。",
         "",
     ])
     return "\n".join(lines)
 
 
-def _write_figures(directory, multi, ranks, targets):
+def _write_figures(directory, multi, ranks, adaptive):
     import matplotlib
 
     matplotlib.use("Agg")
@@ -953,35 +1132,34 @@ def _write_figures(directory, multi, ranks, targets):
     _save_figure(figure, directory / "multi_seed_average_rank")
     plt.close(figure)
 
-    figure, axes = plt.subplots(1, 2, figsize=(9.0, 3.8), sharey=True)
-    for axis, dataset in zip(axes, ("acm", "dblp")):
-        selected = [
-            _lookup(
-                targets,
-                protocol="dvcl_adaptive_target_evasion_v1",
-                dataset=dataset,
-                model="dvcl",
-                rate=rate,
+    figure, axes = plt.subplots(1, 3, figsize=(13.8, 4.2), sharey=True)
+    for axis, dataset in zip(axes, ("acm", "dblp", "aminer")):
+        for model in MODEL_ORDER:
+            selected = [
+                _lookup(adaptive, dataset=dataset, model=model, rate=rate)
+                for rate in (1, 3, 5)
+            ]
+            style = (
+                {"color": "black", "marker": "*", "markersize": 7,
+                 "linewidth": 2.4, "zorder": 10}
+                if model == "dvcl"
+                else {"marker": "o", "markersize": 3, "linewidth": 1.2}
             )
-            for rate in (1.0, 3.0, 5.0)
-        ]
-        axis.errorbar(
-            [1, 3, 5], [100 * row["micro_f1_mean"] for row in selected],
-            yerr=[100 * row["micro_f1_std"] for row in selected],
-            marker="o", capsize=3, label="Adaptive",
-        )
-        axis.plot(
-            [1, 3, 5], [100 * row["clean_micro_f1_mean"] for row in selected],
-            linestyle="--", label="Clean target",
-        )
+            axis.plot(
+                [1, 3, 5],
+                [100 * row["attacked_target_micro_f1_mean"] for row in selected],
+                label=MODEL_LABELS[model], **style,
+            )
         axis.set_title(dataset.upper())
         axis.set_xlabel("Budget Δ")
         axis.set_ylim(0, 100)
         axis.grid(alpha=0.25)
     axes[0].set_ylabel("Target Micro-F1 (%)")
-    axes[1].legend(frameon=False)
-    figure.tight_layout()
-    _save_figure(figure, directory / "dvcl_adaptive_target_evasion")
+    axes[-1].legend(
+        frameon=False, bbox_to_anchor=(1.02, 1.0), loc="upper left", fontsize=8
+    )
+    figure.tight_layout(rect=(0, 0, 0.89, 1))
+    _save_figure(figure, directory / "adaptive_target_evasion_11model")
     plt.close(figure)
 
 
