@@ -1,4 +1,5 @@
 import argparse
+from collections import defaultdict
 import json
 import statistics
 import sys
@@ -25,11 +26,12 @@ def parse_args():
     parser.add_argument("--output", required=True)
     parser.add_argument("--interval", type=int, default=1800)
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--partition-by-attack", action="store_true")
     parser.add_argument("--once", action="store_true")
     return parser.parse_args()
 
 
-def suite_snapshot(config_path, now=None, workers=1):
+def suite_snapshot(config_path, now=None, workers=1, partition_by_attack=False):
     now = now or datetime.now(timezone.utc)
     run_suite = load_run_suite()
     config = run_suite.load_config(config_path)
@@ -78,18 +80,12 @@ def suite_snapshot(config_path, now=None, workers=1):
             })
         if state != "completed":
             pending_groups.append((spec.dataset, spec.attack.name))
-    all_durations = [
-        duration for values in completed_durations.values() for duration in values
-    ]
-    fallback = statistics.median(all_durations) if all_durations else None
-    estimated_seconds = 0.0
-    estimable = bool(pending_groups and fallback is not None)
-    for group in pending_groups:
-        values = completed_durations.get(group)
-        if values:
-            estimated_seconds += statistics.median(values)
-        elif fallback is not None:
-            estimated_seconds += fallback
+    historical_eta = estimate_historical_eta(
+        pending_groups,
+        completed_durations,
+        workers,
+        partition_by_attack=partition_by_attack,
+    )
     return {
         "timestamp": now.isoformat(),
         "config": str(config_path.resolve()),
@@ -100,11 +96,35 @@ def suite_snapshot(config_path, now=None, workers=1):
         },
         "remaining": len(commands) - counts["completed"],
         "historical_eta_hours": (
-            estimated_seconds / (3600 * workers) if estimable else None
+            historical_eta / 3600 if historical_eta is not None else None
         ),
+        "eta_partition": "attack" if partition_by_attack else "pooled",
         "workers": workers,
         "active": active,
     }
+
+
+def estimate_historical_eta(
+    pending_groups, completed_durations, workers, partition_by_attack=False,
+):
+    all_durations = [
+        duration for values in completed_durations.values() for duration in values
+    ]
+    fallback = statistics.median(all_durations) if all_durations else None
+    if not pending_groups or fallback is None:
+        return None
+    estimates = []
+    for group in pending_groups:
+        values = completed_durations.get(group)
+        estimates.append((
+            group[1], statistics.median(values) if values else fallback
+        ))
+    if not partition_by_attack:
+        return sum(duration for _, duration in estimates) / workers
+    partitions = defaultdict(float)
+    for attack, duration in estimates:
+        partitions[attack] += duration
+    return max(partitions.values())
 
 
 def add_eta(snapshot, history):
@@ -127,6 +147,13 @@ def add_eta(snapshot, history):
     delta = completed - int(previous["physical"]["completed"])
     throughput = delta / elapsed_hours if elapsed_hours > 0 else 0.0
     snapshot["throughput_per_hour"] = throughput or None
+    if snapshot.get("eta_partition") == "attack":
+        snapshot["eta_hours"] = snapshot.get("historical_eta_hours")
+        snapshot["eta_source"] = (
+            "historical_attack_partition"
+            if snapshot["eta_hours"] is not None else None
+        )
+        return snapshot
     snapshot["eta_hours"] = (
         snapshot["remaining"] / throughput if throughput > 0 else None
     )
@@ -148,9 +175,13 @@ def read_history(path):
     return rows
 
 
-def record(config_path, output_path, workers=1):
+def record(config_path, output_path, workers=1, partition_by_attack=False):
     history = read_history(output_path)
-    snapshot = add_eta(suite_snapshot(config_path, workers=workers), history)
+    snapshot = add_eta(suite_snapshot(
+        config_path,
+        workers=workers,
+        partition_by_attack=partition_by_attack,
+    ), history)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("a", encoding="utf-8") as stream:
         stream.write(json.dumps(snapshot, ensure_ascii=False) + "\n")
@@ -178,7 +209,12 @@ def main():
     if args.workers <= 0:
         raise ValueError("workers must be positive")
     while True:
-        snapshot = record(config_path, output_path, args.workers)
+        snapshot = record(
+            config_path,
+            output_path,
+            args.workers,
+            partition_by_attack=args.partition_by_attack,
+        )
         if args.once or snapshot["physical"]["completed"] == snapshot["physical"]["expected"]:
             return 0
         time.sleep(args.interval)
