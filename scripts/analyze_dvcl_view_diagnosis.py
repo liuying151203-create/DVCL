@@ -4,6 +4,7 @@ import json
 import statistics
 import sys
 from collections import defaultdict
+from dataclasses import asdict
 from pathlib import Path
 
 
@@ -18,6 +19,7 @@ from scripts.analyze_adaptive_pilot import (
     spec_from_command,
 )
 from dvcl_bench.paths import ExperimentLayout
+from dvcl_bench.manifest import file_sha256
 
 
 def parse_args():
@@ -48,11 +50,15 @@ def collect_clean_rows(config_path):
     config, commands = _commands(config_path)
     rows = []
     issues = []
+    manifests = []
+    hash_cache = {}
     completed = 0
     for command in commands:
         spec = spec_from_command(command)
         run_dir = ExperimentLayout(ROOT).run_dir(spec)
-        payload = _completed_payload(run_dir, issues)
+        payload = _completed_payload(
+            run_dir, spec, command, issues, manifests, hash_cache
+        )
         if payload is None:
             continue
         completed += 1
@@ -64,7 +70,7 @@ def collect_clean_rows(config_path):
             "best_epoch": int(payload["best_epoch"]),
             "run_dir": str(run_dir.resolve()),
         })
-    return rows, issues, len(commands), completed
+    return rows, issues, len(commands), completed, manifests
 
 
 def collect_evaluation_rows(config_path):
@@ -75,6 +81,9 @@ def collect_evaluation_rows(config_path):
     rows = []
     per_target = []
     issues = []
+    manifests = []
+    hash_cache = {}
+    candidate_pool_hashes = defaultdict(set)
     completed = 0
     expected_logical = 0
     for command in commands:
@@ -82,7 +91,9 @@ def collect_evaluation_rows(config_path):
         run_dir = ExperimentLayout(ROOT).run_dir(spec)
         budgets = evaluation_budgets if spec.attack.adaptive else [int(spec.attack.rate)]
         expected_logical += len(budgets)
-        payload = _completed_payload(run_dir, issues)
+        payload = _completed_payload(
+            run_dir, spec, command, issues, manifests, hash_cache
+        )
         if payload is None:
             continue
         completed += 1
@@ -93,6 +104,27 @@ def collect_evaluation_rows(config_path):
         if diagnostics.get("optimizer_steps") != 0:
             issues.append(f"optimizer steps during evaluation: {run_dir}")
             continue
+        checkpoint_path = _resolve_path(diagnostics.get("checkpoint_source", ""))
+        checkpoint_input = manifests[-1]["inputs"].get("checkpoint", {})
+        if checkpoint_path != _resolve_path(checkpoint_input.get("path", "")):
+            issues.append(f"checkpoint source mismatch: {run_dir}")
+        if spec.attack.adaptive:
+            adaptive = diagnostics.get("adaptive_attack", {})
+            checkpoint_sha256 = checkpoint_input.get("sha256")
+            if adaptive.get("victim_checkpoint_sha256") != checkpoint_sha256:
+                issues.append(f"adaptive checkpoint hash mismatch: {run_dir}")
+            candidate_hash = adaptive.get("candidate_pool_sha256")
+            if not candidate_hash:
+                issues.append(f"missing adaptive candidate hash: {run_dir}")
+            else:
+                candidate_pool_hashes[(spec.dataset, spec.seeds.attack)].add(
+                    candidate_hash
+                )
+            if spec.attack.variant == "cand_64" and (
+                adaptive.get("candidate_additions") != 64
+                or adaptive.get("candidate_deletions") != 64
+            ):
+                issues.append(f"adaptive candidate size mismatch: {run_dir}")
         if spec.attack.adaptive:
             evaluations = diagnostics.get("budget_evaluations", {})
             for budget in budgets:
@@ -109,7 +141,13 @@ def collect_evaluation_rows(config_path):
                 rows, per_target, spec, run_dir, int(spec.attack.rate),
                 payload["metrics"], diagnostics,
             )
-    return rows, per_target, issues, len(commands), completed, expected_logical
+    for key, hashes in sorted(candidate_pool_hashes.items()):
+        if len(hashes) != 1:
+            issues.append(f"candidate pool hash mismatch for {key}: {sorted(hashes)}")
+    return (
+        rows, per_target, issues, len(commands), completed,
+        expected_logical, manifests,
+    )
 
 
 def _append_evaluation(rows, per_target, spec, run_dir, budget, metrics, diagnostics):
@@ -223,7 +261,7 @@ def stage_e_decision(clean_rows, summary):
     return best
 
 
-def render_report(clean_rows, summary):
+def render_report(clean_rows, summary, audit=None):
     variants = ("topo", "feat", "concat", "gate", "gated_concat")
     datasets = ("acm", "dblp", "aminer")
     clean = {
@@ -244,6 +282,7 @@ def render_report(clean_rows, summary):
         "- 攻击：HG Baseline 迁移攻击与每模型独立优化的 64+64 候选自适应查询攻击。",
         "- 预算：$\\Delta=\\{1,3,5\\}$；结果只报告 Micro-F1。",
         "- 自适应攻击和 HG 使用各自冻结的目标集，绝对 Micro-F1 不跨攻击类型直接比较。",
+        "- 最终审计核对实验规格、输入路径、输入 SHA-256 和 victim checkpoint 身份。",
         "",
         "## 2. Clean Micro-F1",
         "",
@@ -315,8 +354,13 @@ def render_report(clean_rows, summary):
         f"- 最佳已有门控候选为 `{decision['variant']}`：相对 `concat` 的 DBLP 攻击后增益为 {_points(decision['dblp_gain'])}，三数据集最大 clean 损失为 {_points(decision['max_clean_loss'])}，ACM/AMiner 最大攻击后损失为 {_points(decision['max_other_attack_loss'])}。",
         f"- 预注册门槛判定：{'通过' if decision['passes'] else '未通过'}；下一步应{action}。",
         "- 本结果为单种子机制 Pilot，只用于选择阶段 E 路线，不作为论文显著性结论。",
-        "",
     ])
+    if audit and audit.get("dirty_manifests"):
+        lines.append(
+            f"- {audit['dirty_manifests']} 个运行 manifest 标记为 dirty worktree；"
+            "本阶段仅作机制筛选，正式论文证据必须在冻结提交上重跑。"
+        )
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -346,7 +390,7 @@ def _commands(config_path):
     return config, list(run_suite.commands(config, sys.executable, ROOT))
 
 
-def _completed_payload(run_dir, issues):
+def _completed_payload(run_dir, spec, command, issues, manifests, hash_cache):
     status_path = run_dir / "status.json"
     metrics_path = run_dir / "metrics.json"
     if not status_path.is_file() or not metrics_path.is_file():
@@ -356,7 +400,85 @@ def _completed_payload(run_dir, issues):
     if status.get("state") != "completed":
         issues.append(f"not completed: {run_dir}")
         return None
+    manifest = _audit_manifest(run_dir, spec, command, issues, hash_cache)
+    if manifest is None:
+        return None
+    manifests.append(manifest)
     return json.loads(metrics_path.read_text(encoding="utf-8"))
+
+
+def _audit_manifest(run_dir, spec, command, issues, hash_cache):
+    manifest_path = run_dir / "manifest.json"
+    if not manifest_path.is_file():
+        issues.append(f"missing manifest: {run_dir}")
+        return None
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("schema_version") != 2:
+        issues.append(f"manifest schema mismatch: {run_dir}")
+    expected_experiment = json.loads(json.dumps(asdict(spec)))
+    actual_experiment = dict(manifest.get("experiment", {}))
+    expected_experiment.pop("device", None)
+    actual_experiment.pop("device", None)
+    if actual_experiment != expected_experiment:
+        issues.append(f"manifest experiment mismatch: {run_dir}")
+    expected_inputs = _expected_inputs(spec, command)
+    actual_inputs = manifest.get("inputs", {})
+    if set(actual_inputs) != set(expected_inputs):
+        issues.append(f"manifest input set mismatch: {run_dir}")
+    for name, expected_path in expected_inputs.items():
+        fingerprint = actual_inputs.get(name, {})
+        recorded_path = _resolve_path(fingerprint.get("path", ""))
+        if recorded_path != expected_path:
+            issues.append(f"manifest {name} path mismatch: {run_dir}")
+            continue
+        if not expected_path.is_file():
+            issues.append(f"manifest {name} input missing: {run_dir}")
+            continue
+        cache_key = str(expected_path)
+        if cache_key not in hash_cache:
+            hash_cache[cache_key] = file_sha256(expected_path)
+        if fingerprint.get("sha256") != hash_cache[cache_key]:
+            issues.append(f"manifest {name} hash mismatch: {run_dir}")
+    return manifest
+
+
+def _expected_inputs(spec, command):
+    options = {
+        command[index]: command[index + 1]
+        for index in range(len(command) - 1)
+        if command[index].startswith("--")
+    }
+    layout = ExperimentLayout(ROOT)
+    values = {
+        "clean": layout.clean_path(spec.dataset),
+        "split": layout.split_path(spec.dataset, spec.split_name),
+    }
+    if spec.attack.name != "clean":
+        values["attack"] = options.get(
+            "--attack-path",
+            layout.attack_path(
+                spec.dataset, spec.attack.name, spec.attack.rate,
+                spec.seeds.attack,
+            ),
+        )
+    if "--checkpoint-source" in options:
+        values["checkpoint"] = options["--checkpoint-source"]
+    return {name: _resolve_path(path) for name, path in values.items()}
+
+
+def _resolve_path(path):
+    value = Path(path)
+    return value.resolve() if value.is_absolute() else (ROOT / value).resolve()
+
+
+def _manifest_summary(manifests):
+    return {
+        "manifest_count": len(manifests),
+        "dirty_manifests": sum(bool(value.get("git_dirty")) for value in manifests),
+        "manifest_git_commits": sorted({
+            str(value.get("git_commit")) for value in manifests
+        }),
+    }
 
 
 def write_csv(path, rows):
@@ -380,10 +502,14 @@ def main():
     clean_config = (ROOT / args.clean_config).resolve()
     evaluation_config = (ROOT / args.evaluation_config).resolve()
     output_root = (ROOT / args.output_root).resolve()
-    clean_rows, clean_issues, clean_expected, clean_completed = collect_clean_rows(
-        clean_config
-    )
-    rows, per_target, issues, expected, completed, expected_logical = (
+    (
+        clean_rows, clean_issues, clean_expected, clean_completed,
+        clean_manifests,
+    ) = collect_clean_rows(clean_config)
+    (
+        rows, per_target, issues, expected, completed, expected_logical,
+        evaluation_manifests,
+    ) = (
         collect_evaluation_rows(evaluation_config)
     )
     embedded_issues = [row["_issue"] for row in rows if "_issue" in row]
@@ -402,6 +528,7 @@ def main():
         "logical_results": f"{len(rows)}/{expected_logical}",
         "clean_issues": clean_issues,
         "evaluation_issues": issues,
+        **_manifest_summary(clean_manifests + evaluation_manifests),
         "ok": (
             clean_completed == clean_expected
             and completed == expected
@@ -417,7 +544,9 @@ def main():
     if audit["ok"]:
         report = (ROOT / args.report).resolve()
         report.parent.mkdir(parents=True, exist_ok=True)
-        report.write_text(render_report(clean_rows, summary), encoding="utf-8")
+        report.write_text(
+            render_report(clean_rows, summary, audit), encoding="utf-8"
+        )
     print(
         f"clean={clean_completed}/{clean_expected} "
         f"evaluation={completed}/{expected} "

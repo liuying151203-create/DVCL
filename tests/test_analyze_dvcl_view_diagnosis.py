@@ -1,3 +1,14 @@
+import json
+from dataclasses import asdict
+
+from dvcl_bench.paths import ExperimentLayout
+from dvcl_bench.specs import (
+    AttackSpec,
+    ExperimentSpec,
+    ModelSpec,
+    SeedSpec,
+)
+from scripts import analyze_dvcl_view_diagnosis as ANALYZER
 from scripts.analyze_dvcl_view_diagnosis import render_report, stage_e_decision
 
 
@@ -64,3 +75,58 @@ def test_render_report_contains_all_required_sections():
     assert "## 4. 模型自适应目标逃逸" in report
     assert "## 5. 视图诊断" in report
     assert "将 `gate` 扩展到 3 个配对种子" in report
+
+
+def _manifest_fixture(tmp_path, monkeypatch):
+    monkeypatch.setattr(ANALYZER, "ROOT", tmp_path)
+    layout = ExperimentLayout(tmp_path)
+    clean = layout.clean_path("acm")
+    split = layout.split_path("acm", "paper_seed_1")
+    for path, content in ((clean, b"clean"), (split, b"split")):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    spec = ExperimentSpec(
+        protocol="diagnosis",
+        dataset="acm",
+        split_name="paper_seed_1",
+        seeds=SeedSpec(split=1, attack=1, train=1),
+        attack=AttackSpec(),
+        model=ModelSpec(
+            name="dvcl", backend="native", config={"variant": "concat"}
+        ),
+        device="cuda:0",
+    )
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    experiment = asdict(spec)
+    experiment["device"] = "cuda:3"
+    manifest = {
+        "schema_version": 2,
+        "experiment": experiment,
+        "inputs": {
+            "clean": {"path": str(clean), "sha256": ANALYZER.file_sha256(clean)},
+            "split": {"path": str(split), "sha256": ANALYZER.file_sha256(split)},
+        },
+        "git_commit": "abc123",
+        "git_dirty": True,
+    }
+    (run_dir / "manifest.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    return spec, run_dir, clean
+
+
+def test_manifest_audit_accepts_device_migration(tmp_path, monkeypatch):
+    spec, run_dir, _ = _manifest_fixture(tmp_path, monkeypatch)
+    issues = []
+    manifest = ANALYZER._audit_manifest(run_dir, spec, [], issues, {})
+    assert manifest is not None
+    assert issues == []
+
+
+def test_manifest_audit_rejects_tampered_input(tmp_path, monkeypatch):
+    spec, run_dir, clean = _manifest_fixture(tmp_path, monkeypatch)
+    clean.write_bytes(b"tampered")
+    issues = []
+    ANALYZER._audit_manifest(run_dir, spec, [], issues, {})
+    assert any("manifest clean hash mismatch" in issue for issue in issues)
