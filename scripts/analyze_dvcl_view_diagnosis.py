@@ -36,6 +36,10 @@ def parse_args():
         "--output-root",
         default="outputs/analysis/dvcl_view_diagnosis_pilot_v1",
     )
+    parser.add_argument(
+        "--report",
+        default="docs/dvcl-view-diagnosis-results.md",
+    )
     parser.add_argument("--allow-partial", action="store_true")
     return parser.parse_args()
 
@@ -174,6 +178,168 @@ def aggregate_rows(rows):
     return output
 
 
+def stage_e_decision(clean_rows, summary):
+    clean = {
+        (row["dataset"], row["variant"]): float(row["full_test_micro_f1"])
+        for row in clean_rows
+    }
+    values = {
+        (row["dataset"], row["variant"], row["attack"], int(row["rate"])): row
+        for row in summary
+    }
+    reference = values[("dblp", "concat", "adaptive_query", 5)]
+    candidates = []
+    for variant in ("gate", "gated_concat"):
+        attacked = values[("dblp", variant, "adaptive_query", 5)]
+        gain = (
+            float(attacked["attacked_target_micro_f1_mean"])
+            - float(reference["attacked_target_micro_f1_mean"])
+        )
+        clean_loss = max(
+            clean[(dataset, "concat")] - clean[(dataset, variant)]
+            for dataset in ("acm", "dblp", "aminer")
+        )
+        other_attack_loss = max(
+            float(values[(dataset, "concat", "adaptive_query", 5)][
+                "attacked_target_micro_f1_mean"
+            ])
+            - float(values[(dataset, variant, "adaptive_query", 5)][
+                "attacked_target_micro_f1_mean"
+            ])
+            for dataset in ("acm", "aminer")
+        )
+        candidates.append({
+            "variant": variant,
+            "dblp_gain": gain,
+            "max_clean_loss": clean_loss,
+            "max_other_attack_loss": other_attack_loss,
+        })
+    best = max(candidates, key=lambda row: row["dblp_gain"])
+    best["passes"] = (
+        best["dblp_gain"] >= 0.05
+        and best["max_clean_loss"] <= 0.015
+        and best["max_other_attack_loss"] <= 0.02
+    )
+    return best
+
+
+def render_report(clean_rows, summary):
+    variants = ("topo", "feat", "concat", "gate", "gated_concat")
+    datasets = ("acm", "dblp", "aminer")
+    clean = {
+        (row["dataset"], row["variant"]): float(row["full_test_micro_f1"])
+        for row in clean_rows
+    }
+    values = {
+        (row["dataset"], row["variant"], row["attack"], int(row["rate"])): row
+        for row in summary
+    }
+    lines = [
+        "# DVCL 视图失效诊断结果",
+        "",
+        "## 1. 实验设置",
+        "",
+        "- 数据集：ACM、DBLP、AMiner；单种子机制 Pilot，$(s_a,s_t)=(1,1)$。",
+        "- 模式：`topo`、`feat`、`concat`、`gate`、`gated_concat`。",
+        "- 攻击：HG Baseline 迁移攻击与每模型独立优化的 64+64 候选自适应查询攻击。",
+        "- 预算：$\\Delta=\\{1,3,5\\}$；结果只报告 Micro-F1。",
+        "- 自适应攻击和 HG 使用各自冻结的目标集，绝对 Micro-F1 不跨攻击类型直接比较。",
+        "",
+        "## 2. Clean Micro-F1",
+        "",
+        "| Variant | ACM | DBLP | AMiner |",
+        "|---|---:|---:|---:|",
+    ]
+    for variant in variants:
+        lines.append(
+            f"| `{variant}` | "
+            + " | ".join(_percent(clean[(dataset, variant)]) for dataset in datasets)
+            + " |"
+        )
+    for attack, title in (
+        ("hg_baseline", "HG Baseline 目标逃逸"),
+        ("adaptive_query", "模型自适应目标逃逸"),
+    ):
+        lines.extend(["", f"## {3 if attack == 'hg_baseline' else 4}. {title}", ""])
+        for dataset in datasets:
+            lines.extend([
+                f"### {dataset.upper()}",
+                "",
+                "| Variant | Clean target | $\\Delta=1$ | $\\Delta=3$ | $\\Delta=5$ | Drop@5 | ASR@5 |",
+                "|---|---:|---:|---:|---:|---:|---:|",
+            ])
+            for variant in variants:
+                rate_rows = [values[(dataset, variant, attack, rate)] for rate in (1, 3, 5)]
+                rate5 = rate_rows[-1]
+                lines.append(
+                    f"| `{variant}` | {_percent(float(rate5['clean_target_micro_f1_mean']))} | "
+                    + " | ".join(
+                        _percent(float(row["attacked_target_micro_f1_mean"]))
+                        for row in rate_rows
+                    )
+                    + f" | {_points(float(rate5['micro_f1_drop_mean']))} | "
+                    + f"{_percent(float(rate5['attack_success_rate_mean']))} |"
+                )
+            lines.append("")
+    lines.extend([
+        "## 5. 视图诊断（$\\Delta=5$）",
+        "",
+        "| Dataset | Variant | Attack | Topology L2 | Feature L2 | Disagreement clean→attack | Gate clean→attack |",
+        "|---|---|---|---:|---:|---:|---:|",
+    ])
+    for dataset in datasets:
+        for variant in ("concat", "gate", "gated_concat"):
+            for attack in ("hg_baseline", "adaptive_query"):
+                row = values[(dataset, variant, attack, 5)]
+                lines.append(
+                    f"| {dataset.upper()} | `{variant}` | `{attack}` | "
+                    f"{_number(row.get('drift_topology_l2_mean_mean'))} | "
+                    f"{_number(row.get('drift_feature_l2_mean_mean'))} | "
+                    f"{_transition(row, 'clean_view_disagreement_rate_mean', 'attacked_view_disagreement_rate_mean', percent=True)} | "
+                    f"{_transition(row, 'gate_clean_mean_mean', 'gate_attacked_mean_mean')} |"
+                )
+    decision = stage_e_decision(clean_rows, summary)
+    topo = values[("dblp", "topo", "adaptive_query", 5)]
+    feat = values[("dblp", "feat", "adaptive_query", 5)]
+    action = (
+        f"将 `{decision['variant']}` 扩展到 3 个配对种子"
+        if decision["passes"]
+        else "进入 `reliability_gate` 单种子机制 Pilot"
+    )
+    lines.extend([
+        "",
+        "## 6. 分析与阶段 E 决策",
+        "",
+        f"- DBLP 自适应攻击下，`topo` 的 Drop@5 为 {_points(float(topo['micro_f1_drop_mean']))}，`feat` 为 {_points(float(feat['micro_f1_drop_mean']))}。",
+        "- Feature embedding 漂移为 0 是威胁模型的预期结果：攻击只修改异构结构边，特征 KNN 图和节点特征保持冻结。",
+        f"- 最佳已有门控候选为 `{decision['variant']}`：相对 `concat` 的 DBLP 攻击后增益为 {_points(decision['dblp_gain'])}，三数据集最大 clean 损失为 {_points(decision['max_clean_loss'])}，ACM/AMiner 最大攻击后损失为 {_points(decision['max_other_attack_loss'])}。",
+        f"- 预注册门槛判定：{'通过' if decision['passes'] else '未通过'}；下一步应{action}。",
+        "- 本结果为单种子机制 Pilot，只用于选择阶段 E 路线，不作为论文显著性结论。",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+def _percent(value):
+    return f"{100 * value:.2f}"
+
+
+def _points(value):
+    return f"{100 * value:.2f} pp"
+
+
+def _number(value):
+    return "—" if value in (None, "") else f"{float(value):.4f}"
+
+
+def _transition(row, left, right, percent=False):
+    if left not in row or right not in row:
+        return "—"
+    if percent:
+        return f"{_percent(float(row[left]))}→{_percent(float(row[right]))}"
+    return f"{float(row[left]):.4f}→{float(row[right]):.4f}"
+
+
 def _commands(config_path):
     run_suite = load_run_suite()
     config = run_suite.load_config(config_path)
@@ -248,6 +414,10 @@ def main():
     (output_root / "audit.json").write_text(
         json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    if audit["ok"]:
+        report = (ROOT / args.report).resolve()
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(render_report(clean_rows, summary), encoding="utf-8")
     print(
         f"clean={clean_completed}/{clean_expected} "
         f"evaluation={completed}/{expected} "
