@@ -20,6 +20,14 @@ def parse_args():
     )
     parser.add_argument("--config", required=True)
     parser.add_argument("--device", action="append", dest="devices", required=True)
+    parser.add_argument("--model", action="append", dest="models")
+    parser.add_argument("--variant", action="append", dest="variants")
+    parser.add_argument("--dataset", action="append", dest="datasets")
+    parser.add_argument("--attack-variant", action="append", dest="attack_variants")
+    parser.add_argument("--rate", action="append", type=float, dest="rates")
+    parser.add_argument("--split-seed", action="append", type=int, dest="split_seeds")
+    parser.add_argument("--attack-seed", action="append", type=int, dest="attack_seeds")
+    parser.add_argument("--train-seed", action="append", type=int, dest="train_seeds")
     parser.add_argument(
         "--confirmation-audit",
         default="outputs/analysis/adaptive_attack_strength_confirmation_v1/audit.json",
@@ -138,6 +146,16 @@ def resolve(path):
     return value if value.is_absolute() else ROOT / value
 
 
+def select_config(config, args, run_suite):
+    config = run_suite.select_models(config, args.models)
+    config = run_suite.select_variants(config, args.variants)
+    config = run_suite.select_datasets(config, args.datasets)
+    config = run_suite.select_attacks(config, args.attack_variants, args.rates)
+    return run_suite.select_seeds(
+        config, args.split_seeds, args.attack_seeds, args.train_seeds
+    )
+
+
 def main() -> int:
     args = parse_args()
     validate_audits(
@@ -147,6 +165,7 @@ def main() -> int:
     run_suite = load_run_suite()
     config_path = resolve(args.config)
     config = run_suite.load_config(config_path)
+    config = select_config(config, args, run_suite)
     commands = prioritize_commands(
         list(run_suite.commands(config, sys.executable, ROOT))
     )

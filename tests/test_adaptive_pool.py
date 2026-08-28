@@ -1,5 +1,6 @@
 import importlib.util
 import json
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
@@ -56,3 +57,26 @@ def test_formal_suite_expands_to_99_prioritized_runs():
     )
     assert len(commands) == 99
     assert POOL.options(commands[0])["--model"] == "dvcl"
+
+
+def test_pool_filters_stage_d_to_adaptive_commands_only():
+    run_suite = POOL.load_run_suite()
+    config = run_suite.load_config(
+        ROOT / "configs" / "protocols" / "dvcl_view_diagnosis_pilot_v1.yaml"
+    )
+    args = Namespace(
+        models=None,
+        variants=None,
+        datasets=["dblp"],
+        attack_variants=["cand_64"],
+        rates=None,
+        split_seeds=None,
+        attack_seeds=None,
+        train_seeds=None,
+    )
+    selected = POOL.select_config(config, args, run_suite)
+    commands = list(run_suite.commands(selected, "python", ROOT))
+    assert len(commands) == 5
+    assert {
+        POOL.options(command)["--attack-variant"] for command in commands
+    } == {"cand_64"}
