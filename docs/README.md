@@ -17,6 +17,7 @@
 | `dblp-experiment-results.md` | DBLP 单攻击种子主实验明细 |
 | `aminer-experiment-results.md` | AMiner 十一模型完整结果与攻击有效性审计 |
 | `target-evasion-results.md` | ACM、DBLP、AMiner 的 HG 迁移攻击与 11 模型自适应目标逃逸结果 |
+| `dvcl-view-diagnosis-results.md` | DVCL 五种视图模式的单种子失效诊断与阶段 E 决策 |
 | `robust-baseline-results.md` | RoHe、HeteroGuard、FastRoHGCN |
 | `openhgnn-baseline-results.md` | HGT、MAGNN、HeCo、SimpleHGN |
 | `rnd-attack-results.md` | RND poisoning |

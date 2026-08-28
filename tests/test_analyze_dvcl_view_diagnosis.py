@@ -74,6 +74,7 @@ def test_render_report_contains_all_required_sections():
     assert "## 3. HG Baseline 目标逃逸" in report
     assert "## 4. 模型自适应目标逃逸" in report
     assert "## 5. 视图诊断" in report
+    assert "拓扑权重" in report
     assert "将 `gate` 扩展到 3 个配对种子" in report
 
 

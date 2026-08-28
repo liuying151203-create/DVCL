@@ -9,7 +9,7 @@
 - 阶段 A 已完成：统一 `adaptive_query` 已接入 11 个模型，并复用 165 个经哈希审计的 clean checkpoint。
 - 阶段 B 已完成：候选筛选和 50 目标确认分别达到 12/12 与 48/48 次物理搜索，正式冻结每目标 64 条候选增边和 64 条候选删边；144/144 个 $\Delta\in\{1,3,5\}$ 预算评估审计通过。
 - 阶段 C 已验收：`adaptive_target_evasion_v1` 在 ACM、DBLP、AMiner 上完成 11 模型正式矩阵，99/99 次物理搜索和 297/297 个预算评估通过审计，候选池哈希异常和无效结果均为 0；此前已完成的额外 DVCL 条件保留为补充结果，不进入正式统计。
-- 阶段 D 正在运行：15/15 个 clean checkpoint 已完成；截至 2026-08-28 18:02，攻击诊断完成 47/60 次物理评估和 69/90 个逻辑结果，剩余条件均为 DBLP。
+- 阶段 D 已验收：15/15 个 clean checkpoint、60/60 次物理攻击评估和 90/90 个逻辑结果全部完成，强化审计问题数为 0；结果见 `dvcl-view-diagnosis-results.md`。
 
 ## 2. 总体原则
 
@@ -145,6 +145,17 @@ python scripts/analyze_dvcl_view_diagnosis.py
 
 预检完成后按以下门槛决定是否扩展到 3 个配对种子：DBLP 的 topology drift 和 margin 损失应明显高于 feature view，且 `feat` 或门控模式的攻击后 Micro-F1 优于 `concat`；ACM/AMiner 则重点排查零下降来自 feature view 稳定、融合分类边界冗余，还是有限候选池未覆盖有效结构边。若证据不一致，不进入阶段 E，而是先扩大候选池或补白盒梯度诊断。
 
+### 验收结论
+
+- 完整性：15/15 个 clean checkpoint、60/60 次物理攻击评估和 90/90 个逻辑结果完成；实验规格、输入路径、输入 SHA-256、victim checkpoint 和候选池哈希审计问题数均为 0。
+- DBLP 自适应攻击在 $\Delta=5$ 下使 `topo`、`concat`、`gate`、`gated_concat` 分别下降 62、46、52、58 个百分点，而 `feat` 下降 0 个百分点，证明失效集中于拓扑视图。
+- 现有门控没有识别拓扑失真：`gate` 和 `gated_concat` 的攻击后 Micro-F1 分别为 38 和 30，均低于 `concat` 的 42；其中 `gate` 相对 `concat` 为 $-4$ 个百分点，未达到预注册的 $+5$ 个百分点门槛。
+- Feature embedding 漂移为 0 符合结构攻击定义，但 feature-only 的 DBLP clean Micro-F1 仅 79.98，不能直接用永久关闭拓扑视图替代可靠性建模。
+- ACM/AMiner 上 `concat` 和 `gate` 的自适应 Drop@5 均为 0；该结论仅适用于当前 64+64 有限候选、结构修改威胁模型，不构成普遍鲁棒性证明。
+- 本阶段 75 个 manifest 均来自 dirty worktree，结果只用于单种子机制筛选；进入论文统计的候选必须在冻结提交上重新训练并重新生成自适应攻击。
+
+阶段 D 的预注册门槛判定为“不通过已有门控”。阶段 E 应先实现 `reliability_gate` 单种子机制 Pilot，而不是扩展 `gate`/`gated_concat` 到多种子，也不得直接把 `feat` 作为最终模型。
+
 ## 7. 阶段 E：DVCL 防御改进
 
 候选方案按复杂度递增：
@@ -202,4 +213,4 @@ python scripts/analyze_dvcl_view_diagnosis.py
 
 ## 10. 开工顺序
 
-阶段 A、B、C 已全部验收。阶段 D 已完成 15/15 个 clean checkpoint，攻击诊断正在断点续跑；完成 60/60 物理评估和 90/90 逻辑结果后立即暂停并提交详细报告，不自动进入阶段 E。下一步决策必须解释 ACM/AMiner 中 DVCL 零成功扰动与 DBLP 明显下降的视图差异，不得仅依据有限候选攻击下的零下降直接宣称普遍鲁棒性。
+阶段 A、B、C、D 已全部验收，当前暂停在阶段边界，不自动进入阶段 E。下一步在用户确认后实现 `reliability_gate` 单种子机制 Pilot：节点级拓扑权重至少使用双视图分歧、分类置信度和 topology drift，并重新生成针对该模型的 64+64 自适应攻击。只有通过阶段 E 门槛的候选才扩展到 3 个配对种子。

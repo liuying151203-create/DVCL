@@ -340,6 +340,9 @@ def render_report(clean_rows, summary, audit=None):
     decision = stage_e_decision(clean_rows, summary)
     topo = values[("dblp", "topo", "adaptive_query", 5)]
     feat = values[("dblp", "feat", "adaptive_query", 5)]
+    concat = values[("dblp", "concat", "adaptive_query", 5)]
+    gate = values[("dblp", "gate", "adaptive_query", 5)]
+    gated_concat = values[("dblp", "gated_concat", "adaptive_query", 5)]
     action = (
         f"将 `{decision['variant']}` 扩展到 3 个配对种子"
         if decision["passes"]
@@ -351,6 +354,7 @@ def render_report(clean_rows, summary, audit=None):
         "",
         f"- DBLP 自适应攻击下，`topo` 的 Drop@5 为 {_points(float(topo['micro_f1_drop_mean']))}，`feat` 为 {_points(float(feat['micro_f1_drop_mean']))}。",
         "- Feature embedding 漂移为 0 是威胁模型的预期结果：攻击只修改异构结构边，特征 KNN 图和节点特征保持冻结。",
+        f"- DBLP 的双视图预测分歧在 `concat` 中由 {_transition(concat, 'clean_view_disagreement_rate_mean', 'attacked_view_disagreement_rate_mean', percent=True)}；但 `gate` 的拓扑权重由 {_transition(gate, 'gate_clean_mean_mean', 'gate_attacked_mean_mean')}，`gated_concat` 由 {_transition(gated_concat, 'gate_clean_mean_mean', 'gate_attacked_mean_mean')}，没有在拓扑失真时显著降低。",
         f"- 最佳已有门控候选为 `{decision['variant']}`：相对 `concat` 的 DBLP 攻击后增益为 {_points(decision['dblp_gain'])}，三数据集最大 clean 损失为 {_points(decision['max_clean_loss'])}，ACM/AMiner 最大攻击后损失为 {_points(decision['max_other_attack_loss'])}。",
         f"- 预注册门槛判定：{'通过' if decision['passes'] else '未通过'}；下一步应{action}。",
         "- 本结果为单种子机制 Pilot，只用于选择阶段 E 路线，不作为论文显著性结论。",
