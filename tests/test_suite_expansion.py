@@ -182,6 +182,27 @@ def test_variant_selection_partitions_ablation_suite():
     assert all('"variant":"no_cl"' in command[-1] for command in commands)
 
 
+def test_seed_filter_partitions_legacy_ablation_suite():
+    config = RUN_SUITE.load_config(
+        ROOT / "configs" / "suites" / "dblp_poisoning_ablation_v1.yaml"
+    )
+    config = RUN_SUITE.select_variants(config, ["no_cl"])
+    selected = RUN_SUITE.select_seeds(config, train=[2, 4])
+    commands = list(RUN_SUITE.commands(selected, "python", ROOT))
+    assert len(commands) == 14
+    assert {
+        command[command.index("--train-seed") + 1] for command in commands
+    } == {"2", "4"}
+
+
+def test_seed_filter_rejects_unknown_legacy_ablation_seed():
+    config = RUN_SUITE.load_config(
+        ROOT / "configs" / "suites" / "dblp_poisoning_ablation_v1.yaml"
+    )
+    with pytest.raises(ValueError, match="Unknown selected train seeds: \\[6\\]"):
+        RUN_SUITE.select_seeds(config, train=[6])
+
+
 def test_attack_path_pattern_is_expanded():
     config = {
         "protocol": "pilot",

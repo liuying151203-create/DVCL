@@ -637,11 +637,15 @@ def train_dvcl(
     set_random_seed(train_seed)
     target = _device(device)
     features, labels, masks = _inputs(clean, split, target)
-    similarity = feature_similarity(features)
-    transitions = transition_edges(
-        features, _selected_adjs(clean, attack), clean.meta_paths, similarity
-    )
-    views = purified_graphs(transitions, config.thresholds)
+    topology_enabled = config.view_mode in {"both", "both_nocl", "topo"}
+    similarity = feature_similarity(features) if topology_enabled else None
+    transitions = None
+    views = None
+    if topology_enabled:
+        transitions = transition_edges(
+            features, _selected_adjs(clean, attack), clean.meta_paths, similarity
+        )
+        views = purified_graphs(transitions, config.thresholds)
     feature_graph = build_feature_knn_graph(features, config.knn_k, config.knn_mode)
     semantic = SemanticHAN(
         len(clean.meta_paths), features.shape[1], config.semantic_hidden_dim,
@@ -670,13 +674,16 @@ def train_dvcl(
         semantic.eval()
         model.eval()
         with torch.no_grad():
-            semantic(features, views)
-            last_attention = semantic.semantic_weights().detach().cpu()
-            last_graph = dgl.from_scipy(
-                semantic_graph(
-                    transitions, last_attention.to(target), config.global_threshold
-                )
-            ).to(target)
+            last_attention = None
+            last_graph = None
+            if topology_enabled:
+                semantic(features, views)
+                last_attention = semantic.semantic_weights().detach().cpu()
+                last_graph = dgl.from_scipy(
+                    semantic_graph(
+                        transitions, last_attention.to(target), config.global_threshold
+                    )
+                ).to(target)
             test_logits, topology, feature = model(
                 features, last_graph, feature_graph
             )
@@ -687,9 +694,12 @@ def train_dvcl(
             test_logits[masks["test"]], labels[masks["test"]]
         )
         diagnostics = {
-            "semantic_attention": last_attention.tolist(),
+            "semantic_attention": (
+                last_attention.tolist() if last_attention is not None else []
+            ),
             "feature_knn_edges": int(feature_graph.num_edges()),
             "view_mode": config.view_mode,
+            "topology_branch_active": topology_enabled,
             "checkpoint_reused": True,
             "checkpoint_source": str(Path(checkpoint_source).resolve()),
             "optimizer_steps": 0,
@@ -704,32 +714,32 @@ def train_dvcl(
         )
         if _is_target_evasion(attack):
             def target_forward(adjs, record):
-                attacked_transitions = transition_edges(
-                    features, adjs, clean.meta_paths, similarity
-                )
-                attacked_graph = dgl.from_scipy(semantic_graph(
-                    attacked_transitions,
-                    last_attention.to(target),
-                    config.global_threshold,
-                )).to(target)
                 attacked_topology = None
-                if config.view_mode in {"both", "both_nocl", "topo"}:
+                if topology_enabled:
+                    attacked_transitions = transition_edges(
+                        features, adjs, clean.meta_paths, similarity
+                    )
+                    attacked_graph = dgl.from_scipy(semantic_graph(
+                        attacked_transitions,
+                        last_attention.to(target),
+                        config.global_threshold,
+                    )).to(target)
                     attacked_topology = model.topology_encoder(
                         features, attacked_graph
                     )
                 return model.classify(attacked_topology, feature)[0]
 
             def target_diagnostic_forward(adjs, record):
-                attacked_transitions = transition_edges(
-                    features, adjs, clean.meta_paths, similarity
-                )
-                attacked_graph = dgl.from_scipy(semantic_graph(
-                    attacked_transitions,
-                    last_attention.to(target),
-                    config.global_threshold,
-                )).to(target)
                 attacked_topology = None
-                if config.view_mode in {"both", "both_nocl", "topo"}:
+                if topology_enabled:
+                    attacked_transitions = transition_edges(
+                        features, adjs, clean.meta_paths, similarity
+                    )
+                    attacked_graph = dgl.from_scipy(semantic_graph(
+                        attacked_transitions,
+                        last_attention.to(target),
+                        config.global_threshold,
+                    )).to(target)
                     attacked_topology = model.topology_encoder(
                         features, attacked_graph
                     )
@@ -755,12 +765,20 @@ def train_dvcl(
     for epoch in range(epochs):
         semantic.train()
         model.train()
-        semantic_logits = semantic(features, views)
-        attention = semantic.semantic_weights()
-        matrix = semantic_graph(transitions, attention, config.global_threshold)
-        topology_graph = dgl.from_scipy(matrix).to(target)
+        attention = None
+        topology_graph = None
+        if topology_enabled:
+            semantic_logits = semantic(features, views)
+            attention = semantic.semantic_weights()
+            matrix = semantic_graph(transitions, attention, config.global_threshold)
+            topology_graph = dgl.from_scipy(matrix).to(target)
         logits, topology, feature = model(features, topology_graph, feature_graph)
-        semantic_loss = loss_fn(semantic_logits[masks["train"]], labels[masks["train"]])
+        if topology_enabled:
+            semantic_loss = loss_fn(
+                semantic_logits[masks["train"]], labels[masks["train"]]
+            )
+        else:
+            semantic_loss = logits.new_tensor(0.0)
         classification_loss = loss_fn(logits[masks["train"]], labels[masks["train"]])
         if config.view_mode == "both":
             contrastive_loss = cross_view_contrastive_loss(
@@ -835,14 +853,15 @@ def train_dvcl(
             "val_loss": float(validation_loss),
             **{f"val_{key}": value for key, value in validation.items()},
         })
-        last_graph = topology_graph
-        last_attention = attention.detach().cpu()
+        if topology_enabled:
+            last_graph = topology_graph
+            last_attention = attention.detach().cpu()
         stopped_epoch = epoch
         if stopper.step(float(validation_loss), validation["accuracy"], holder, epoch):
             break
 
     stopper.restore(holder)
-    if not config.legacy_checkpoint_semantics:
+    if not config.legacy_checkpoint_semantics and topology_enabled:
         semantic.eval()
         with torch.no_grad():
             semantic(features, views)
@@ -857,35 +876,39 @@ def train_dvcl(
     metrics = classification_metrics(test_logits[masks["test"]], labels[masks["test"]])
     save_checkpoint(checkpoint_path, holder, config, stopper.best_epoch)
     diagnostics = {
-        "semantic_attention": last_attention.tolist(),
+        "semantic_attention": (
+            last_attention.tolist() if last_attention is not None else []
+        ),
         "feature_knn_edges": int(feature_graph.num_edges()),
         "view_mode": config.view_mode,
+        "topology_branch_active": topology_enabled,
     }
     diagnostics.update(_dvcl_gate_summary(model))
     target_forward = None
     if _is_target_evasion(attack):
         def target_forward(adjs, record):
-            attacked_transitions = transition_edges(
-                features, adjs, clean.meta_paths, similarity
-            )
-            attacked_graph = dgl.from_scipy(semantic_graph(
-                attacked_transitions, last_attention.to(target), config.global_threshold
-            )).to(target)
             topology = None
-            if config.view_mode in {"both", "both_nocl", "topo"}:
+            if topology_enabled:
+                attacked_transitions = transition_edges(
+                    features, adjs, clean.meta_paths, similarity
+                )
+                attacked_graph = dgl.from_scipy(semantic_graph(
+                    attacked_transitions, last_attention.to(target),
+                    config.global_threshold
+                )).to(target)
                 topology = model.topology_encoder(features, attacked_graph)
             return model.classify(topology, feature)[0]
 
         def target_diagnostic_forward(adjs, record):
-            attacked_transitions = transition_edges(
-                features, adjs, clean.meta_paths, similarity
-            )
-            attacked_graph = dgl.from_scipy(semantic_graph(
-                attacked_transitions, last_attention.to(target),
-                config.global_threshold,
-            )).to(target)
             attacked_topology = None
-            if config.view_mode in {"both", "both_nocl", "topo"}:
+            if topology_enabled:
+                attacked_transitions = transition_edges(
+                    features, adjs, clean.meta_paths, similarity
+                )
+                attacked_graph = dgl.from_scipy(semantic_graph(
+                    attacked_transitions, last_attention.to(target),
+                    config.global_threshold,
+                )).to(target)
                 attacked_topology = model.topology_encoder(features, attacked_graph)
             attacked_logits = model.classify(attacked_topology, feature)[0]
             return _dvcl_target_view_state(

@@ -1,8 +1,10 @@
 import pytest
 
 torch = pytest.importorskip("torch")
+sp = pytest.importorskip("scipy.sparse")
 
-from dvcl_bench.adapters import _train_supervised
+from dvcl_bench.adapters import _train_supervised, train_dvcl
+from dvcl_bench.artifacts import AttackArtifact, CleanGraphArtifact, SplitArtifact
 from dvcl_bench.registry import build_model_config
 from dvcl_bench.training import (
     DVCLTrainConfig,
@@ -81,3 +83,98 @@ def test_old_dvcl_checkpoint_config_accepts_new_default_fields_only():
     }
     assert _checkpoint_config_matches(old, config)
     assert not _checkpoint_config_matches(old, DVCLTrainConfig(lambda_route=0.5))
+
+
+def test_feature_only_training_is_invariant_to_structural_attack(tmp_path):
+    forward = sp.csr_matrix([
+        [1, 0, 1, 0, 0, 0],
+        [0, 1, 0, 1, 0, 0],
+        [0, 0, 1, 0, 1, 0],
+        [0, 0, 0, 1, 0, 1],
+        [1, 0, 0, 0, 1, 0],
+        [0, 1, 0, 0, 0, 1],
+    ])
+    attacked = sp.csr_matrix([
+        [1, 1, 1, 0, 0, 0],
+        [1, 1, 0, 1, 0, 0],
+        [0, 1, 1, 0, 1, 0],
+        [0, 0, 1, 1, 0, 1],
+        [1, 0, 0, 1, 1, 0],
+        [0, 1, 0, 0, 1, 1],
+    ])
+    clean = CleanGraphArtifact(
+        dataset="acm",
+        version="toy-v1",
+        predict_ntype="paper",
+        node_counts={"paper": 6, "author": 6},
+        hete_adjs={"pa": forward, "ap": forward.T.tocsr()},
+        features=torch.eye(6),
+        labels=torch.tensor([0, 1, 0, 1, 0, 1]),
+        num_classes=2,
+        meta_paths=[["pa", "ap"]],
+        canonical_etypes=[
+            ("paper", "pa", "author"),
+            ("author", "ap", "paper"),
+        ],
+        stats={},
+    )
+    masks = {
+        "train": torch.tensor([1, 1, 1, 0, 0, 0], dtype=torch.bool),
+        "val": torch.tensor([0, 0, 0, 1, 0, 0], dtype=torch.bool),
+        "test": torch.tensor([0, 0, 0, 0, 1, 1], dtype=torch.bool),
+    }
+    split = SplitArtifact(
+        dataset="acm",
+        split_name="toy",
+        seed=1,
+        protocol="toy",
+        train_mask=masks["train"],
+        val_mask=masks["val"],
+        test_mask=masks["test"],
+        train_idx=torch.tensor([0, 1, 2]),
+        val_idx=torch.tensor([3]),
+        test_idx=torch.tensor([4, 5]),
+        stats={},
+    )
+    attack = AttackArtifact(
+        dataset="acm",
+        attack_name="prbcd",
+        attack_rate=25,
+        seed=1,
+        clean_version="toy-v1",
+        split_name="toy",
+        split_seed=1,
+        perturbed_hete_adjs={"pa": attacked, "ap": attacked.T.tocsr()},
+        added_edges={},
+        deleted_edges={},
+        target_nodes=None,
+        stats={},
+        source="test",
+    )
+    config = DVCLTrainConfig(
+        hidden_dim=4,
+        heads=2,
+        semantic_hidden_dim=4,
+        semantic_heads=2,
+        knn_k=2,
+        view_mode="feat",
+        lambda_dvcl=0.0,
+    )
+    clean_checkpoint = tmp_path / "clean.pt"
+    attacked_checkpoint = tmp_path / "attacked.pt"
+    clean_result = train_dvcl(
+        clean, split, None, config, 7, 3, 3, "cpu", clean_checkpoint
+    )
+    attacked_result = train_dvcl(
+        clean, split, attack, config, 7, 3, 3, "cpu", attacked_checkpoint
+    )
+    assert clean_result.metrics == attacked_result.metrics
+    assert clean_result.history == attacked_result.history
+    assert clean_result.diagnostics["topology_branch_active"] is False
+    assert clean_result.diagnostics["semantic_attention"] == []
+    clean_state = torch.load(clean_checkpoint, map_location="cpu")["state_dict"]
+    attacked_state = torch.load(attacked_checkpoint, map_location="cpu")["state_dict"]
+    assert clean_state.keys() == attacked_state.keys()
+    assert all(
+        torch.equal(clean_state[name], attacked_state[name]) for name in clean_state
+    )

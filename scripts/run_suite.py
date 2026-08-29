@@ -118,6 +118,31 @@ def select_attacks(config, selected_variants=None, selected_rates=None):
 def select_seeds(config, split=None, attack=None, train=None):
     if not split and not attack and not train:
         return config
+    if "seeds" not in config and "variants" in config:
+        available = {
+            "split": {int(config.get("split_seed", 1))},
+            "attack": {int(config.get("attack_seed", 1))},
+            "train": {int(value) for value in config.get("train_seeds", [1])},
+        }
+        selected_values = {"split": split, "attack": attack, "train": train}
+        for name, selected in selected_values.items():
+            if not selected:
+                continue
+            missing = set(selected) - available[name]
+            if missing:
+                raise ValueError(f"Unknown selected {name} seeds: {sorted(missing)}")
+        result = dict(config)
+        if split:
+            result["split_seed"] = int(split[0])
+        if attack:
+            result["attack_seed"] = int(attack[0])
+        if train:
+            selected = set(train)
+            result["train_seeds"] = [
+                value for value in config.get("train_seeds", [1])
+                if int(value) in selected
+            ]
+        return result
     result = dict(config)
     seeds = dict(config.get("seeds", {}))
     pairs = seeds.get("pairs")
