@@ -113,6 +113,10 @@ def estimate_historical_eta(
     fallback = statistics.median(all_durations) if all_durations else None
     if not pending_groups or fallback is None:
         return None
+    if partition_by_attack and any(
+        group not in completed_durations for group in pending_groups
+    ):
+        return None
     estimates = []
     for group in pending_groups:
         values = completed_durations.get(group)

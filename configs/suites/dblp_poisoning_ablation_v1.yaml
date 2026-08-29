@@ -1,0 +1,43 @@
+suite: dblp_poisoning_ablation_v1
+protocol: dblp_poisoning_ablation_v1
+dataset: dblp
+model: dvcl
+backend: native
+split_name: paper_seed_1
+split_seed: 1
+attack_seed: 1
+device: cuda:0
+training:
+  epochs: 200
+  patience: 100
+variants:
+  - name: full
+    model_config:
+      view_mode: both
+      lambda_dvcl: 1.0
+  - name: no_cl
+    model_config:
+      view_mode: both_nocl
+      lambda_dvcl: 0.0
+  - name: topology_only
+    model_config:
+      view_mode: topo
+      lambda_dvcl: 0.0
+  - name: feature_only
+    model_config:
+      view_mode: feat
+      lambda_dvcl: 0.0
+attacks:
+  - name: clean
+    rates: [0]
+    threat_model: poisoning
+    scope: global
+  - name: prbcd
+    rates: [5, 15, 25]
+    threat_model: poisoning
+    scope: global
+  - name: heteprbcd
+    rates: [5, 15, 25]
+    threat_model: poisoning
+    scope: global
+train_seeds: [1, 2, 3, 4, 5]

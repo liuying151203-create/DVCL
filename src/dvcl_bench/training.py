@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import random
 import shutil
-from dataclasses import asdict, dataclass, field
+from dataclasses import MISSING, asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -53,9 +53,15 @@ class DVCLTrainConfig:
     knn_mode: str = "directed"
     view_mode: str = "both"
     fusion_mode: str = "concat"
+    gate_hidden_dim: int = 16
+    route_temperature: float = 1.0
     temperature: float = 0.5
     lambda_han: float = 1.0
     lambda_dvcl: float = 1.0
+    beta_aux: float = 0.5
+    lambda_route: float = 1.0
+    structure_augment_rate: float = 0.0
+    lambda_aug: float = 1.0
     learning_rate: float = 0.005
     weight_decay: float = 0.001
     thresholds: Optional[List[float]] = None
@@ -264,8 +270,7 @@ def save_checkpoint(path: Path, model, config, best_epoch: int) -> None:
 def restore_checkpoint(source: Path, destination: Path, model, config):
     source = Path(source)
     payload = torch.load(source, map_location=next(model.parameters()).device)
-    expected = asdict(config)
-    if payload.get("config") != expected:
+    if not _checkpoint_config_matches(payload.get("config"), config):
         raise ValueError(
             "Checkpoint configuration does not match the requested model: "
             f"source={source}"
@@ -276,3 +281,25 @@ def restore_checkpoint(source: Path, destination: Path, model, config):
     if source.resolve() != destination.resolve():
         shutil.copy2(source, destination)
     return int(payload.get("best_epoch", -1))
+
+
+def _checkpoint_config_matches(recorded, config):
+    if not isinstance(recorded, dict):
+        return False
+    expected = asdict(config)
+    if set(recorded) - set(expected):
+        return False
+    if any(expected.get(name) != value for name, value in recorded.items()):
+        return False
+    config_fields = {item.name: item for item in fields(config)}
+    for name in set(expected) - set(recorded):
+        item = config_fields[name]
+        if item.default is not MISSING:
+            default = item.default
+        elif item.default_factory is not MISSING:
+            default = item.default_factory()
+        else:
+            return False
+        if expected[name] != default:
+            return False
+    return True

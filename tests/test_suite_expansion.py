@@ -21,6 +21,11 @@ def test_main_and_ablation_suite_sizes():
     assert len(list(RUN_SUITE.commands(main, "python", ROOT))) == 220
     assert len(list(RUN_SUITE.commands(ablation, "python", ROOT))) == 140
 
+    dblp_ablation = RUN_SUITE.load_config(
+        ROOT / "configs" / "suites" / "dblp_poisoning_ablation_v1.yaml"
+    )
+    assert len(list(RUN_SUITE.commands(dblp_ablation, "python", ROOT))) == 140
+
 
 def test_baseline_suite_size():
     baseline = RUN_SUITE.load_config(
@@ -237,6 +242,23 @@ def test_attack_path_pattern_supports_all_seed_dimensions():
     )
 
 
+def test_aminer_relation_pilot_expands_twelve_isolated_runs():
+    config = RUN_SUITE.load_config(
+        ROOT / "configs/protocols/aminer_poisoning_relation_pilot_v1.yaml"
+    )
+    commands = list(RUN_SUITE.commands(config, "python", ROOT))
+    assert len(commands) == 12
+    variants = {
+        command[command.index("--attack-variant") + 1] for command in commands
+    }
+    assert variants == {"pa", "pr", "joint"}
+    for command in commands:
+        variant = command[command.index("--attack-variant") + 1]
+        attack = command[command.index("--attack") + 1]
+        path = command[command.index("--attack-path") + 1]
+        assert f"/f1_relations/{variant}/{attack}/rate_15/seed_1/attack.pt" in path
+
+
 def test_checkpoint_pattern_is_expanded_per_model_and_train_seed():
     config = {
         "protocol": "adaptive",
@@ -310,6 +332,51 @@ def test_dvcl_view_diagnosis_pilot_sizes_and_variants():
         )
         checkpoint = command[command.index("--checkpoint-source") + 1]
         assert f"/dvcl/{model_config['variant']}/clean/" in checkpoint
+
+
+def test_dvcl_reliability_gate_pilot_has_fifteen_physical_runs():
+    clean = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" /
+        "dvcl_reliability_gate_clean_pilot_v1.yaml"
+    )
+    evaluation = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" /
+        "dvcl_reliability_gate_pilot_v1.yaml"
+    )
+    clean_commands = list(RUN_SUITE.commands(clean, "python", ROOT))
+    evaluation_commands = list(RUN_SUITE.commands(evaluation, "python", ROOT))
+    assert len(clean_commands) == 3
+    assert len(evaluation_commands) == 12
+    assert sum("--adaptive" in command for command in evaluation_commands) == 3
+    assert all("--checkpoint-source" in command for command in evaluation_commands)
+    assert all(
+        json.loads(command[command.index("--model-config-json") + 1])[
+            "fusion_mode"
+        ] == "reliability_gate"
+        for command in clean_commands + evaluation_commands
+    )
+
+
+def test_dvcl_reliability_gate_aug_pilot_changes_training_only():
+    clean = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" /
+        "dvcl_reliability_gate_aug_clean_pilot_v1.yaml"
+    )
+    evaluation = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" /
+        "dvcl_reliability_gate_aug_pilot_v1.yaml"
+    )
+    clean_commands = list(RUN_SUITE.commands(clean, "python", ROOT))
+    evaluation_commands = list(RUN_SUITE.commands(evaluation, "python", ROOT))
+    assert len(clean_commands) == 3
+    assert len(evaluation_commands) == 12
+    for command in clean_commands + evaluation_commands:
+        model_config = json.loads(
+            command[command.index("--model-config-json") + 1]
+        )
+        assert model_config["fusion_mode"] == "reliability_gate"
+        assert model_config["structure_augment_rate"] == 0.1
+        assert model_config["lambda_aug"] == 1.0
 
 
 def test_seed_filters_preserve_configured_pairs():

@@ -3,7 +3,13 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from dvcl_bench.adapters import _train_supervised
-from dvcl_bench.training import HANTrainConfig, LegacyEarlyStopping
+from dvcl_bench.registry import build_model_config
+from dvcl_bench.training import (
+    DVCLTrainConfig,
+    HANTrainConfig,
+    LegacyEarlyStopping,
+    _checkpoint_config_matches,
+)
 
 
 def test_legacy_early_stopping_restores_joint_best_state():
@@ -46,3 +52,32 @@ def test_supervised_training_can_reuse_exact_checkpoint(tmp_path):
     assert result.diagnostics["checkpoint_reused"] is True
     assert result.diagnostics["optimizer_steps"] == 0
     assert source.read_bytes() == destination.read_bytes()
+
+
+def test_dvcl_reliability_gate_config_is_registered():
+    config = build_model_config("dvcl", {
+        "fusion_mode": "reliability_gate",
+        "gate_hidden_dim": 8,
+        "route_temperature": 0.75,
+        "beta_aux": 0.25,
+        "lambda_route": 0.5,
+    })
+    assert config.fusion_mode == "reliability_gate"
+    assert config.gate_hidden_dim == 8
+    assert config.route_temperature == 0.75
+    assert config.beta_aux == 0.25
+    assert config.lambda_route == 0.5
+
+
+def test_old_dvcl_checkpoint_config_accepts_new_default_fields_only():
+    config = DVCLTrainConfig()
+    old = {
+        name: value
+        for name, value in config.__dict__.items()
+        if name not in {
+            "gate_hidden_dim", "route_temperature", "beta_aux", "lambda_route",
+            "structure_augment_rate", "lambda_aug",
+        }
+    }
+    assert _checkpoint_config_matches(old, config)
+    assert not _checkpoint_config_matches(old, DVCLTrainConfig(lambda_route=0.5))

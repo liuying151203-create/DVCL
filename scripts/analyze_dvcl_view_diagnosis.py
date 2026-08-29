@@ -62,14 +62,18 @@ def collect_clean_rows(config_path):
         if payload is None:
             continue
         completed += 1
-        rows.append({
+        row = {
             "dataset": spec.dataset,
             "variant": spec.model.config["variant"],
             "train_seed": spec.seeds.train,
             "full_test_micro_f1": float(payload["metrics"]["micro_f1"]),
             "best_epoch": int(payload["best_epoch"]),
             "run_dir": str(run_dir.resolve()),
-        })
+        }
+        for name, value in payload.get("diagnostics", {}).items():
+            if name.startswith("gate_") and isinstance(value, (int, float)):
+                row[name] = value
+        rows.append(row)
     return rows, issues, len(commands), completed, manifests
 
 
@@ -169,6 +173,7 @@ def _append_evaluation(rows, per_target, spec, run_dir, budget, metrics, diagnos
         "attacked_target_micro_f1": float(metrics["micro_f1"]),
         "micro_f1_drop": clean_micro - float(metrics["micro_f1"]),
         "attack_success_rate": float(diagnostics["attack_success_rate"]),
+        "view_definition": view.get("definition", ""),
         "run_dir": str(run_dir.resolve()),
     }
     for section in ("clean", "attacked", "drift", "gate"):

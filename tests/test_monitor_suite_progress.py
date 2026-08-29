@@ -65,6 +65,20 @@ def test_partitioned_eta_uses_slowest_attack_queue():
     assert scaled == pytest.approx(7200)
 
 
+def test_partitioned_eta_rejects_cross_dataset_fallback():
+    pending = [("dblp", "adaptive_query")]
+    durations = {
+        ("acm", "adaptive_query"): [900],
+        ("aminer", "adaptive_query"): [300],
+    }
+    assert estimate_historical_eta(
+        pending, durations, workers=2, partition_by_attack=True
+    ) is None
+    assert estimate_historical_eta(
+        pending, durations, workers=2, partition_by_attack=False
+    ) == pytest.approx(300)
+
+
 def test_partitioned_eta_is_not_overridden_by_aggregate_throughput():
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     history = [{

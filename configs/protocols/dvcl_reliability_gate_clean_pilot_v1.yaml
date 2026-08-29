@@ -1,0 +1,37 @@
+protocol: dvcl_reliability_gate_clean_pilot_v1
+device: cuda:0
+
+datasets:
+  - acm
+  - dblp
+  - aminer
+
+model: dvcl
+backend: native
+model_config_path: configs/models/dvcl.yaml
+split_name_pattern: paper_seed_{seed}
+
+variants:
+  - name: reliability_gate
+    model_config:
+      view_mode: both
+      fusion_mode: reliability_gate
+      gate_hidden_dim: 16
+      route_temperature: 1.0
+      lambda_dvcl: 1.0
+      beta_aux: 0.5
+      lambda_route: 1.0
+
+attacks:
+  - name: clean
+    rates: [0]
+
+seeds:
+  split: [1]
+  pairs:
+    - attack: 1
+      train: 1
+
+training:
+  epochs: 200
+  patience: 100

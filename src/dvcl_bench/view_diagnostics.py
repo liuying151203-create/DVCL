@@ -16,7 +16,10 @@ def target_view_diagnostics(clean_state, attacked_states, labels):
     )
     target_labels = labels[targets]
     output = {
-        "definition": "same-checkpoint branch zero-ablation diagnostics",
+        "definition": clean_state.get(
+            "diagnostic_definition",
+            "same-checkpoint branch zero-ablation diagnostics",
+        ),
         "clean": {},
         "attacked": {},
         "drift": {},

@@ -10,6 +10,8 @@
 - 阶段 B 已完成：候选筛选和 50 目标确认分别达到 12/12 与 48/48 次物理搜索，正式冻结每目标 64 条候选增边和 64 条候选删边；144/144 个 $\Delta\in\{1,3,5\}$ 预算评估审计通过。
 - 阶段 C 已验收：`adaptive_target_evasion_v1` 在 ACM、DBLP、AMiner 上完成 11 模型正式矩阵，99/99 次物理搜索和 297/297 个预算评估通过审计，候选池哈希异常和无效结果均为 0；此前已完成的额外 DVCL 条件保留为补充结果，不进入正式统计。
 - 阶段 D 已验收：15/15 个 clean checkpoint、60/60 次物理攻击评估和 90/90 个逻辑结果全部完成，强化审计问题数为 0；结果见 `dvcl-view-diagnosis-results.md`。
+- 阶段 E 已验收：两个可靠性门控候选均未通过，论文模型冻结为 `concat`。
+- 阶段 F1 已验收：AMiner 三种关系范围的 6 个 PRBCD/HetePRBCD artifact 和 12/12 次下游 Pilot 审计通过，但最佳 P–R 范围平均仅下降 0.07 pp，未达到 2 pp 扩展门槛。
 
 ## 2. 总体原则
 
@@ -161,7 +163,7 @@ python scripts/analyze_dvcl_view_diagnosis.py
 候选方案按复杂度递增：
 
 1. 使用已有 `gate`/`gated_concat` 替代固定 concat，建立直接对照。
-2. 增加基于视图分歧、预测置信度和 topology 漂移的可靠性感知门控 $\alpha_i$。
+2. 增加基于视图分歧、预测置信度和无 clean 参考的表征一致性代理量的可靠性感知门控 $\alpha_i$；clean/attacked embedding drift 只用于离线诊断，不作为主模型推理输入。
 3. 训练时加入结构扰动，使门控学习在 topology 异常时降低其贡献。
 4. 联合约束 clean 准确率、跨视图一致性和攻击条件稳定性，避免始终退化为 feature-only。
 
@@ -170,12 +172,20 @@ python scripts/analyze_dvcl_view_diagnosis.py
 ### 阶段 E 决策门槛
 
 1. 若阶段 D 中已有 `gate` 或 `gated_concat` 在 DBLP 自适应攻击下相对 `concat` 提升至少 5 个百分点，且三数据集 clean Micro-F1 损失不超过 1.5 个百分点，则先将该模式扩展到 3 个配对种子，不立即增加新模块。
-2. 若已有门控不能满足门槛，则实现 `reliability_gate`：输入至少包含双视图预测分歧、分类置信度和 topology drift，并输出节点级拓扑权重 $\alpha_i$。
+2. 若已有门控不能满足门槛，则实现 `reliability_gate`：输入至少包含双视图预测分歧、分类置信度和无参考表征一致性代理量，并输出节点级拓扑权重 $\alpha_i$；禁止读取测试标签或 clean/attacked 成对 oracle。
 3. 仅当 `reliability_gate` 仍不能满足门槛时，增加训练时结构扰动版本 `reliability_gate_aug`；不得同时引入多个无法独立归因的改动。
 4. 候选模型必须重新生成针对自身的 64+64 自适应攻击，并与相同 seed 的 `concat`、`feat` 和最佳已有门控配对比较。
 5. 正式验收要求：DBLP $\Delta=5$ Micro-F1 和 ASR 明显改善，ACM/AMiner 不出现超过 2 个百分点的攻击后退化，且门控不恒定退化为 feature-only。
 
 阶段 E 先执行单种子机制 Pilot，暂停汇报后只对通过门槛的至多两个候选扩展到 $(s_a,s_t)=(1,1),(2,2),(3,3)$。正式矩阵规模在阶段 D 报告中冻结，禁止边跑边改评价口径。
+
+### 阶段 E 验收结论
+
+- `reliability_gate` 和 `reliability_gate_aug` 均完成 3/3 clean、12/12 物理攻击评估和 18/18 逻辑结果，输入、checkpoint、候选池与 manifest 审计问题均为 0。
+- `reliability_gate` 的 DBLP 自适应 $\Delta=5$ Micro-F1 为 40，较 `concat` 低 2 pp；`reliability_gate_aug` 为 44，仅高 2 pp，未达到 5 pp 门槛。
+- 增强版在 ACM 自适应攻击下较 `concat` 低 4 pp，超过允许的 2 pp 退化；两个候选均未满足三数据集门控非塌缩门槛。
+- 阶段 E 判定为未通过，不扩展候选到多种子，也不继续基于单种子测试结果调参。后续冻结 `concat` 为论文主模型，并将 DBLP 自适应脆弱性写入局限性。
+- 统一结果见 `docs/dvcl-stage-e-results.md`，机器可读审计见 `outputs/analysis/dvcl_reliability_gate_pilot_v1/` 和 `outputs/analysis/dvcl_reliability_gate_aug_pilot_v1/`。
 
 ## 8. 阶段 F：其余论文补充实验
 
@@ -195,6 +205,23 @@ python scripts/analyze_dvcl_view_diagnosis.py
 
 每个子阶段均先冻结协议和预期运行数，再执行输入审计、正式运行和完整性审计。F1–F5 不并行改变模型定义；阶段 E 一旦冻结，后续只补证据，不继续调参追逐测试结果。
 
+### 阶段 F2 预注册协议
+
+- 数据集：DBLP；变体为 Full DVCL、w/o Cross-view CL、w/o Feature View、w/o Topology View。
+- 条件：clean、PRBCD/HetePRBCD 的 $r=5\%,15\%,25\%$；训练种子 $s_t=1,\ldots,5$，共 $4\times7\times5=140$ 次运行。
+- 汇总：先在每个训练种子内跨扰动率计算攻击族平均，再报告五种子的 Micro-F1 均值与标准差；配对贡献定义为 Full DVCL 减去对应消融。
+- 验收：140/140 次运行及输入哈希审计通过，全部 manifest 来自同一干净提交；Full DVCL 与 `dblp_poisoning_main_v1` 的 35 个对应条件逐项一致；w/o Topology View 在纯结构攻击下逐种子保持不变。
+- 正式运行前必须先提交阶段 E、F1 和 F2 协议代码，禁止把 dirty Pilot manifest 写入论文消融表。
+
+### 阶段 F1 验收结论
+
+- 在 $r=15\%$、$(s_a,s_t)=(1,1)$ 下生成 P–A、P–R、P–A+P–R 三种等全局预算范围，共 6 个 PRBCD/HetePRBCD artifact；预算、关系、反向边和 provenance 验证全部通过。
+- HeteroSAGE 与 DVCL 共完成 12/12 次下游训练，输入路径、artifact SHA-256 和 manifest 审计问题数为 0。
+- 最佳公共范围为 P–R，但四个攻击/模型条件的平均 Micro-F1 下降仅 0.07 pp，远低于预注册的 2 pp 门槛；其他两种范围平均下降为负。
+- P–A HetePRBCD 的 surrogate 下降 2.96 pp，但下游平均下降接近 0，表明弱点主要是代理攻击跨模型迁移不足，而不是预算未实现或仅攻击了错误关系。
+- 按预注册规则停止 attack seed 2–3 和 360 次正式扩展；AMiner 现有 poisoning 结果保留为描述性证据，不用于宣称 DVCL 具备强 poisoning 鲁棒性。
+- 结果见 `docs/aminer-poisoning-relation-pilot.md`，机器审计见 `outputs/analysis/aminer_poisoning_relation_pilot_v1/`。
+
 ## 9. 阶段 G：最终冻结
 
 - 重新运行结果汇总和文档生成器。
@@ -207,10 +234,10 @@ python scripts/analyze_dvcl_view_diagnosis.py
 - 三数据集主表、poisoning/RND/HG/模型自适应攻击、关键消融、敏感性和效率实验均有完整审计；
 - 论文核心结论至少有 3 个独立配对重复，效应量、95% CI 和多重比较校正齐全；
 - DVCL 的鲁棒性表述明确限定威胁模型，不把有限候选零下降表述为普遍鲁棒；
-- 最终模型相对默认 `concat` 的改进同时覆盖 clean 与最强攻击，不依赖单一数据集或单一 seed；
+- 若论文主张自适应防御，最终模型必须相对 `concat` 同时改善 clean 与最强攻击且不依赖单一数据集或 seed；当前候选未满足，因此首篇论文必须保留 `concat` 并明确不主张自适应鲁棒性；
 - Git 提交、环境、artifact、checkpoint、结果和图表哈希全部冻结，复现命令在干净环境通过；
 - 实验章节、方法章节、威胁模型、局限性和复现附录使用同一协议口径，不存在未解释的异常结果。
 
 ## 10. 开工顺序
 
-阶段 A、B、C、D 已全部验收，当前暂停在阶段边界，不自动进入阶段 E。下一步在用户确认后实现 `reliability_gate` 单种子机制 Pilot：节点级拓扑权重至少使用双视图分歧、分类置信度和 topology drift，并重新生成针对该模型的 64+64 自适应攻击。只有通过阶段 E 门槛的候选才扩展到 3 个配对种子。
+阶段 A–E 和 F1 已全部验收。阶段 E 未产生通过门槛的新模型，已冻结 `concat` 为后续论文主模型；F1 证明当前 AMiner poisoning 的主要限制是跨模型迁移弱，并按门槛取消 360 次无效扩展。当前暂停在阶段边界，下一步经用户确认后进入 F2，将统一 `w/o` 组件消融扩展到 DBLP。

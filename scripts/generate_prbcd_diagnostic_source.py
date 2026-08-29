@@ -40,6 +40,11 @@ def parse_args():
     parser.add_argument("--constrained", action="store_true")
     parser.add_argument("--biased", action="store_true")
     parser.add_argument("--lamb", type=float)
+    parser.add_argument(
+        "--relation-scope",
+        choices=["default", "pa", "pr", "joint"],
+        default="default",
+    )
     return parser.parse_args()
 
 
@@ -91,6 +96,9 @@ def main() -> int:
     budget, symmetric = generator.select_budget(
         data, values.dataname, values.constrained
     )
+    budget, symmetric = _resolve_relation_budget(
+        generator, data, args.relation_scope, budget, symmetric
+    )
     expected = int((values.atk_rate / 100.0) * (data.num_edges / 2))
     if values.atk_name == "PRBCD":
         modified, before, after, history = _run_prbcd(
@@ -121,6 +129,7 @@ def main() -> int:
         "seed": values.seed,
         "constrained": values.constrained,
         "biased": values.biased,
+        "relation_scope": args.relation_scope,
         "lambda": values.lamb if values.biased else None,
         "budget": [list(edge_type) for edge_type in budget],
         "victim_model": "GCN" if values.atk_name == "PRBCD" else "HeteroSAGE",
@@ -151,6 +160,34 @@ def _bind_frozen_split(data, head_node, split):
     store.train_mask = split.train_mask.clone()
     store.val_mask = split.val_mask.clone()
     store.test_mask = split.test_mask.clone()
+
+
+def _resolve_relation_budget(
+    generator, data, relation_scope, default_budget, default_symmetric
+):
+    if relation_scope == "default":
+        return default_budget, default_symmetric
+
+    relation_names = {"pa"} if relation_scope == "pa" else {"pr"}
+    if relation_scope == "joint":
+        relation_names = {"pa", "pr"}
+    budget = [
+        edge_type
+        for edge_type in data.edge_types
+        if edge_type[0] == "paper" and edge_type[1] in relation_names
+    ]
+    found = {edge_type[1] for edge_type in budget}
+    if found != relation_names:
+        missing = sorted(relation_names - found)
+        raise ValueError(
+            f"Relation scope {relation_scope!r} is unavailable; missing={missing}"
+        )
+    symmetric = {}
+    for edge_type in budget:
+        reverse = generator.find_reverse_edge_type(data.edge_types, edge_type)
+        if reverse is not None:
+            symmetric[edge_type] = reverse
+    return budget, symmetric
 
 
 def _run_heteprbcd(generator, args, data, classes, head, budget, symmetric, count):

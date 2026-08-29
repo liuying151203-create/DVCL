@@ -1,0 +1,62 @@
+protocol: aminer_poisoning_relation_pilot_v1
+device: cuda:0
+
+datasets:
+  - aminer
+
+models:
+  - name: heterosage
+    backend: native
+    config_path: configs/models/heterosage.yaml
+  - name: dvcl
+    backend: native
+    config_path: configs/models/dvcl.yaml
+
+split_name_pattern: paper_seed_{seed}
+
+attacks:
+  - name: prbcd
+    variant: pa
+    rates: [15]
+    threat_model: poisoning
+    scope: global
+    path_pattern: data/attacks/{dataset}/f1_relations/{variant}/{attack}/rate_{rate}/seed_{attack_seed}/attack.pt
+  - name: prbcd
+    variant: pr
+    rates: [15]
+    threat_model: poisoning
+    scope: global
+    path_pattern: data/attacks/{dataset}/f1_relations/{variant}/{attack}/rate_{rate}/seed_{attack_seed}/attack.pt
+  - name: prbcd
+    variant: joint
+    rates: [15]
+    threat_model: poisoning
+    scope: global
+    path_pattern: data/attacks/{dataset}/f1_relations/{variant}/{attack}/rate_{rate}/seed_{attack_seed}/attack.pt
+  - name: heteprbcd
+    variant: pa
+    rates: [15]
+    threat_model: poisoning
+    scope: global
+    path_pattern: data/attacks/{dataset}/f1_relations/{variant}/{attack}/rate_{rate}/seed_{attack_seed}/attack.pt
+  - name: heteprbcd
+    variant: pr
+    rates: [15]
+    threat_model: poisoning
+    scope: global
+    path_pattern: data/attacks/{dataset}/f1_relations/{variant}/{attack}/rate_{rate}/seed_{attack_seed}/attack.pt
+  - name: heteprbcd
+    variant: joint
+    rates: [15]
+    threat_model: poisoning
+    scope: global
+    path_pattern: data/attacks/{dataset}/f1_relations/{variant}/{attack}/rate_{rate}/seed_{attack_seed}/attack.pt
+
+seeds:
+  split: [1]
+  attack: [1]
+  train: [1]
+
+training:
+  epochs: 200
+  patience: 100

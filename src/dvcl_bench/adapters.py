@@ -29,6 +29,7 @@ from .models.dvcl import (
     DualViewContrastiveDefense,
     build_feature_knn_graph,
     cross_view_contrastive_loss,
+    perturb_topology_graph,
 )
 from .models.semantic import (
     NodeLevelAggregator,
@@ -649,6 +650,7 @@ def train_dvcl(
     model = DualViewContrastiveDefense(
         features.shape[1], config.hidden_dim, clean.num_classes, config.heads,
         config.dropout, config.feature_mask_rate, config.view_mode, config.fusion_mode,
+        config.gate_hidden_dim, config.route_temperature,
     ).to(target)
     optimizer = torch.optim.Adam(
         list(semantic.parameters()) + list(model.parameters()),
@@ -692,8 +694,7 @@ def train_dvcl(
             "checkpoint_source": str(Path(checkpoint_source).resolve()),
             "optimizer_steps": 0,
         }
-        if model.last_gate_weight is not None:
-            diagnostics["gate_mean"] = float(model.last_gate_weight.mean())
+        diagnostics.update(_dvcl_gate_summary(model))
         result = TrainingResult(
             metrics,
             [{"epoch": best_epoch, "checkpoint_reused": True}],
@@ -767,10 +768,40 @@ def train_dvcl(
             )
         else:
             contrastive_loss = logits.new_tensor(0.0)
+        reliability = model.reliability_losses(
+            topology, feature, labels, masks["train"]
+        )
+        augmented_classification_loss = logits.new_tensor(0.0)
+        augmented_auxiliary_loss = logits.new_tensor(0.0)
+        augmented_route_loss = logits.new_tensor(0.0)
+        if config.structure_augment_rate > 0:
+            augmented_graph = perturb_topology_graph(
+                topology_graph, config.structure_augment_rate
+            )
+            augmented_topology = model.topology_encoder(
+                features, augmented_graph
+            )
+            augmented_logits = model.classify(augmented_topology, feature)[0]
+            augmented_classification_loss = loss_fn(
+                augmented_logits[masks["train"]], labels[masks["train"]]
+            )
+            augmented_reliability = model.reliability_losses(
+                augmented_topology, feature, labels, masks["train"]
+            )
+            augmented_auxiliary_loss = augmented_reliability["auxiliary_loss"]
+            augmented_route_loss = augmented_reliability["route_loss"]
+        augmented_loss = (
+            augmented_classification_loss
+            + config.beta_aux * augmented_auxiliary_loss
+            + config.lambda_route * augmented_route_loss
+        )
         total_loss = (
             config.lambda_han * semantic_loss
             + classification_loss
             + config.lambda_dvcl * contrastive_loss
+            + config.beta_aux * reliability["auxiliary_loss"]
+            + config.lambda_route * reliability["route_loss"]
+            + config.lambda_aug * augmented_loss
         )
         optimizer.zero_grad()
         total_loss.backward()
@@ -790,6 +821,16 @@ def train_dvcl(
             "semantic_loss": float(semantic_loss.detach()),
             "classification_loss": float(classification_loss.detach()),
             "contrastive_loss": float(contrastive_loss.detach()),
+            "auxiliary_loss": float(reliability["auxiliary_loss"].detach()),
+            "route_loss": float(reliability["route_loss"].detach()),
+            "augmented_classification_loss": float(
+                augmented_classification_loss.detach()
+            ),
+            "augmented_auxiliary_loss": float(
+                augmented_auxiliary_loss.detach()
+            ),
+            "augmented_route_loss": float(augmented_route_loss.detach()),
+            "augmented_loss": float(augmented_loss.detach()),
             "total_loss": float(total_loss.detach()),
             "val_loss": float(validation_loss),
             **{f"val_{key}": value for key, value in validation.items()},
@@ -820,8 +861,7 @@ def train_dvcl(
         "feature_knn_edges": int(feature_graph.num_edges()),
         "view_mode": config.view_mode,
     }
-    if model.last_gate_weight is not None:
-        diagnostics["gate_mean"] = float(model.last_gate_weight.mean())
+    diagnostics.update(_dvcl_gate_summary(model))
     target_forward = None
     if _is_target_evasion(attack):
         def target_forward(adjs, record):
@@ -1228,6 +1268,20 @@ def _dvcl_view_state(model, fused_logits, topology, feature):
         result["feature_embedding"] = feature
     result.update(model.diagnostic_views(topology, feature))
     return result
+
+
+def _dvcl_gate_summary(model):
+    if model.last_gate_weight is None:
+        return {}
+    weights = model.last_gate_weight.detach().flatten()
+    return {
+        "gate_mean": float(weights.mean()),
+        "gate_std": float(weights.std(unbiased=False)),
+        "gate_min": float(weights.min()),
+        "gate_max": float(weights.max()),
+        "gate_topology_fraction": float((weights >= 0.9).float().mean()),
+        "gate_feature_fraction": float((weights <= 0.1).float().mean()),
+    }
 
 
 def _dvcl_target_view_state(model, fused_logits, topology, feature, target):

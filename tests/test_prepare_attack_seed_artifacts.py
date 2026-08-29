@@ -19,6 +19,28 @@ def test_generator_command_freezes_attack_semantics(tmp_path):
     assert "--biased" in hete
     assert hete[hete.index("--seed") + 1] == "3"
     assert hete[hete.index("--block-size") + 1] == "200000"
+    assert "--relation-scope" not in prbcd
+
+
+def test_relation_scope_uses_isolated_paths_and_command(tmp_path):
+    source = MODULE.source_path("aminer", "prbcd", 15, 1, "pr")
+    artifact = MODULE.artifact_path("aminer", "prbcd", 15, 1, "pr")
+    command = MODULE.generator_command(
+        "aminer", "prbcd", 15, 1, 0, 50000, tmp_path / "source.pt", "pr"
+    )
+    assert "f1_relations/pr/prbcd/rate_15/seed_1/source.pt" in str(source)
+    assert "f1_relations/pr/prbcd/rate_15/seed_1/attack.pt" in str(artifact)
+    assert command[command.index("--relation-scope") + 1] == "pr"
+
+
+def test_generator_command_can_freeze_data_root(tmp_path):
+    command = MODULE.generator_command(
+        "aminer", "prbcd", 15, 1, 0, 50000, tmp_path / "source.pt",
+        "joint", tmp_path / "data",
+    )
+    assert command[command.index("--data-root") + 1] == str(
+        (tmp_path / "data").resolve()
+    )
 
 
 def test_validate_provenance_rejects_mislabeled_attack():
@@ -32,3 +54,19 @@ def test_validate_provenance_rejects_mislabeled_attack():
         assert "biased" in str(exc)
     else:
         raise AssertionError("mislabeled PRBCD provenance must fail")
+
+
+def test_validate_provenance_checks_relation_budget():
+    provenance = {
+        "dataset": "aminer", "attack": "PRBCD", "rate": 15, "seed": 1,
+        "constrained": True, "biased": False, "relation_scope": "pr",
+        "budget": [["paper", "pa", "author"]],
+    }
+    try:
+        MODULE.validate_provenance(
+            provenance, "aminer", "prbcd", 15, 1, "pr"
+        )
+    except ValueError as exc:
+        assert "budget" in str(exc)
+    else:
+        raise AssertionError("mislabeled relation budget must fail")
