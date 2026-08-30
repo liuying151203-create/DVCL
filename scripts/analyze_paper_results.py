@@ -50,7 +50,10 @@ TARGET_PROTOCOLS = (
     "dvcl_adaptive_target_evasion_v1",
 )
 CLEAN_PROTOCOLS = ("acm_poisoning_main_v1", "dblp_poisoning_main_v1")
-ABLATION_PROTOCOL = "acm_poisoning_ablation_v1"
+ABLATION_PROTOCOLS = (
+    "acm_poisoning_ablation_v1",
+    "dblp_poisoning_ablation_v1",
+)
 ADAPTIVE_PROTOCOL = "adaptive_target_evasion_v1"
 ADAPTIVE_CONFIG = ROOT / "configs" / "protocols" / f"{ADAPTIVE_PROTOCOL}.yaml"
 EXPECTED_PROTOCOL_RUNS = {
@@ -67,6 +70,7 @@ EXPECTED_PROTOCOL_RUNS = {
     "dvcl_adaptive_target_evasion_v1": 30,
     "adaptive_target_evasion_v1": 99,
     "acm_poisoning_ablation_v1": 140,
+    "dblp_poisoning_ablation_v1": 140,
 }
 MODEL_ORDER = (
     "han", "heterosage", "rohe", "heteroguard", "fastrohgcn", "hgt",
@@ -325,24 +329,27 @@ def _multi_seed_family_rows(multi_rows, all_rows):
 
 
 def _ablation_rows(rows):
-    selected = [row for row in rows if row["protocol"] == ABLATION_PROTOCOL]
+    selected = [row for row in rows if row["protocol"] in ABLATION_PROTOCOLS]
     per_seed = defaultdict(list)
     for row in selected:
         condition = row["attack"] if row["attack"] != "clean" else "clean"
-        key = (row["variant"], condition, row["train_seed"])
+        key = (
+            row["dataset"], row["variant"], condition, row["train_seed"]
+        )
         per_seed[key].append(row["micro_f1"])
         if row["attack"] != "clean":
-            per_seed[(row["variant"], "all", row["train_seed"])].append(
-                row["micro_f1"]
-            )
+            per_seed[
+                (row["dataset"], row["variant"], "all", row["train_seed"])
+            ].append(row["micro_f1"])
     grouped = defaultdict(list)
     for key, values in per_seed.items():
-        grouped[key[:2]].append(statistics.mean(values))
+        grouped[key[:3]].append(statistics.mean(values))
     result = []
     for key, values in sorted(grouped.items()):
         result.append({
-            "variant": key[0],
-            "condition": key[1],
+            "dataset": key[0],
+            "variant": key[1],
+            "condition": key[2],
             "n": len(values),
             "micro_f1_mean": statistics.mean(values),
             "micro_f1_std": statistics.stdev(values) if len(values) > 1 else 0.0,
@@ -490,7 +497,7 @@ def _final_document(
         "| HG 迁移目标逃逸 | ACM、DBLP、AMiner | 统一 11 模型 | artifact seed 1，$s_{train}=1\\ldots5$ | 测试时固定攻击迁移性 |",
         "| 多攻击种子统计复验 | ACM、DBLP | HAN、HeteroSAGE、HSeCo、DVCL | $s_{atk}=1\\ldots3,s_{train}=1\\ldots5$ | 显著性与攻击种子稳定性 |",
         "| 模型自适应目标逃逸 | ACM、DBLP、AMiner | 统一 11 模型 | $(s_a,s_t)=(1,1),(2,2),(3,3)$ | 每模型独立优化攻击边 |",
-        "| 组件消融 | ACM | DVCL 四个 variant | $s_{train}=1\\ldots5$ | 模块贡献 |",
+        "| 组件消融 | ACM、DBLP | DVCL 四个 variant | $s_{train}=1\\ldots5$ | 模块贡献 |",
         "",
         "统一训练设置为 $E_{max}=200$、$P=100$ 和完整模型 checkpoint。Poisoning 扰动率为 $r\\in\\{5,10,15,20,25\\}\\%$；目标逃逸预算为 $\\Delta\\in\\{1,3,5\\}$。表格报告均值 ± 样本标准差。",
         "",
@@ -577,16 +584,21 @@ def _final_document(
         "",
         "ACM 和 AMiner 中 DVCL 在当前 64+64 有限候选攻击下未出现目标 Micro-F1 下降，但这只能说明该查询攻击未找到成功扰动，不能证明完整候选空间或白盒攻击下的鲁棒性。DBLP 中 DVCL 在 $\\Delta=5$ 下降 46.00 个百分点，且平均排名低于 HeteroGuard，确认 DVCL 存在数据集依赖的自适应目标逃逸脆弱性。每数据集只有 3 个独立配对重复，Holm 校正后均未达到显著，效应量和置信区间应与排名共同解释。",
         "",
-        "## 5. ACM 组件消融",
+        "## 5. ACM/DBLP 组件消融",
         "",
         "消融只回答 DVCL 组件贡献，不作为三数据集基线比较。",
         "",
-        "| Variant | Clean | PRBCD Avg. | HetePRBCD Avg. | Attack Avg. |",
-        "|---|---:|---:|---:|---:|",
     ])
-    lines.extend(_ablation_table_lines(ablation))
+    for dataset in ("acm", "dblp"):
+        lines.extend([
+            f"### {dataset.upper()}",
+            "",
+            "| Variant | Clean | PRBCD Avg. | HetePRBCD Avg. | Attack Avg. |",
+            "|---|---:|---:|---:|---:|",
+        ])
+        lines.extend(_ablation_table_lines(ablation, dataset))
+        lines.append("")
     lines.extend([
-        "",
         "## 6. 异常结果审计与结论边界",
         "",
         "### 6.1 AMiner Poisoning 强度",
@@ -612,7 +624,8 @@ def _final_document(
         "2. 多攻击种子复验支持 DVCL 相对 HSeCo 的 ACM/DBLP 总体增益，但不支持 DVCL 在每个数据集、每种攻击上普遍最优。",
         "3. DVCL 在 DBLP PRBCD 平均下低于 HSeCo；ACM 相对 HAN/HeteroSAGE 的多种子差异未达到校正后显著。",
         "4. HG 固定迁移攻击、自适应查询攻击和 poisoning 具有不同语义，禁止合并计算总 Attack Average。",
-        "5. 统一 11 模型自适应矩阵已完成；下一步按 topology/feature 视图漂移和预测分歧开展 DVCL 失效诊断，再决定是否改进门控融合。",
+        "5. 统一 11 模型自适应矩阵及视图失效诊断已完成；可靠性门控候选未通过预注册门槛，因此论文模型冻结为 `concat`，并明确 DBLP 自适应目标逃逸脆弱性。",
+        "6. ACM/DBLP 消融均支持双视图和跨视图对比学习的正贡献；DBLP 中移除特征视图后 HetePRBCD 平均下降 10.88 pp，说明特征视图主要缓冲拓扑攻击。",
         "",
         "## 7. 论文图表",
         "",
@@ -628,6 +641,7 @@ def _final_document(
         "",
         "- 完整扰动率与数据集明细：`docs/acm-experiment-results.md`、`docs/dblp-experiment-results.md`、`docs/aminer-experiment-results.md`",
         "- 目标逃逸逐模型结果：`docs/target-evasion-results.md`",
+        "- DBLP 消融配对贡献与严格审计：`docs/dblp-ablation-results.md`",
         "- 鲁棒/OpenHGNN/RND 基线：`docs/robust-baseline-results.md`、`docs/openhgnn-baseline-results.md`、`docs/rnd-attack-results.md`",
         "- 文档导航与口径优先级：`docs/README.md`",
         "- 当前有效后续实验计划：`docs/next-experiment-plan.md`",
@@ -897,7 +911,7 @@ def _aminer_table_lines(aminer):
     return lines
 
 
-def _ablation_table_lines(ablation):
+def _ablation_table_lines(ablation, dataset):
     variants = (
         ("full", "Full DVCL"),
         ("no_cl", "w/o Cross-view CL"),
@@ -908,7 +922,9 @@ def _ablation_table_lines(ablation):
     for variant, label in variants:
         cells = []
         for condition in ("clean", "prbcd", "heteprbcd", "all"):
-            row = _lookup(ablation, variant=variant, condition=condition)
+            row = _lookup(
+                ablation, dataset=dataset, variant=variant, condition=condition
+            )
             cells.append(_score(row))
         lines.append(f"| {label} | " + " | ".join(cells) + " |")
     return lines

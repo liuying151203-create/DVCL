@@ -1,5 +1,6 @@
 import pytest
 
+from scripts.analyze_paper_results import _ablation_rows, _ablation_table_lines
 from dvcl_bench.paper_analysis import (
     average_ranks,
     holm_adjust,
@@ -60,3 +61,47 @@ def test_target_summary_uses_paired_clean_target_scores():
     assert result["clean_micro_f1_mean"] == pytest.approx(0.85)
     assert result["micro_f1_mean"] == pytest.approx(0.7)
     assert result["drop_pp_mean"] == pytest.approx(15.0)
+
+
+def test_ablation_summary_keeps_acm_and_dblp_separate():
+    rows = []
+    for dataset, clean, attacked in (
+        ("acm", 0.9, 0.8),
+        ("dblp", 0.7, 0.6),
+    ):
+        for variant in ("full", "no_cl", "topology_only", "feature_only"):
+            rows.extend([
+                {
+                    "protocol": f"{dataset}_poisoning_ablation_v1",
+                    "dataset": dataset,
+                    "variant": variant,
+                    "attack": "clean",
+                    "train_seed": 1,
+                    "micro_f1": clean,
+                },
+                {
+                    "protocol": f"{dataset}_poisoning_ablation_v1",
+                    "dataset": dataset,
+                    "variant": variant,
+                    "attack": "prbcd",
+                    "train_seed": 1,
+                    "micro_f1": attacked,
+                },
+                {
+                    "protocol": f"{dataset}_poisoning_ablation_v1",
+                    "dataset": dataset,
+                    "variant": variant,
+                    "attack": "heteprbcd",
+                    "train_seed": 1,
+                    "micro_f1": attacked,
+                },
+            ])
+    summary = _ablation_rows(rows)
+    assert next(
+        row for row in summary
+        if row["dataset"] == "acm"
+        and row["variant"] == "full"
+        and row["condition"] == "clean"
+    )["micro_f1_mean"] == pytest.approx(0.9)
+    dblp_lines = _ablation_table_lines(summary, "dblp")
+    assert dblp_lines[0].startswith("| Full DVCL | 70.00")

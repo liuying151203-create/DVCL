@@ -10,11 +10,11 @@
 | HG 迁移目标逃逸 | ACM、DBLP、AMiner | 统一 11 模型 | artifact seed 1，$s_{train}=1\ldots5$ | 测试时固定攻击迁移性 |
 | 多攻击种子统计复验 | ACM、DBLP | HAN、HeteroSAGE、HSeCo、DVCL | $s_{atk}=1\ldots3,s_{train}=1\ldots5$ | 显著性与攻击种子稳定性 |
 | 模型自适应目标逃逸 | ACM、DBLP、AMiner | 统一 11 模型 | $(s_a,s_t)=(1,1),(2,2),(3,3)$ | 每模型独立优化攻击边 |
-| 组件消融 | ACM | DVCL 四个 variant | $s_{train}=1\ldots5$ | 模块贡献 |
+| 组件消融 | ACM、DBLP | DVCL 四个 variant | $s_{train}=1\ldots5$ | 模块贡献 |
 
 统一训练设置为 $E_{max}=200$、$P=100$ 和完整模型 checkpoint。Poisoning 扰动率为 $r\in\{5,10,15,20,25\}\%$；目标逃逸预算为 $\Delta\in\{1,3,5\}$。表格报告均值 ± 样本标准差。
 
-完整性检查覆盖 13 套协议、4124/4124 次运行，所有主表单元均通过三数据集×十一模型覆盖校验。
+完整性检查覆盖 14 套协议、4264/4264 次运行，所有主表单元均通过三数据集×十一模型覆盖校验。
 
 ## 2. 三数据集统一十一模型全局 Poisoning
 
@@ -242,9 +242,11 @@
 
 ACM 和 AMiner 中 DVCL 在当前 64+64 有限候选攻击下未出现目标 Micro-F1 下降，但这只能说明该查询攻击未找到成功扰动，不能证明完整候选空间或白盒攻击下的鲁棒性。DBLP 中 DVCL 在 $\Delta=5$ 下降 46.00 个百分点，且平均排名低于 HeteroGuard，确认 DVCL 存在数据集依赖的自适应目标逃逸脆弱性。每数据集只有 3 个独立配对重复，Holm 校正后均未达到显著，效应量和置信区间应与排名共同解释。
 
-## 5. ACM 组件消融
+## 5. ACM/DBLP 组件消融
 
 消融只回答 DVCL 组件贡献，不作为三数据集基线比较。
+
+### ACM
 
 | Variant | Clean | PRBCD Avg. | HetePRBCD Avg. | Attack Avg. |
 |---|---:|---:|---:|---:|
@@ -252,6 +254,15 @@ ACM 和 AMiner 中 DVCL 在当前 64+64 有限候选攻击下未出现目标 Mic
 | w/o Cross-view CL | 88.12 ± 0.53 | 87.31 ± 0.64 | 87.54 ± 0.74 | 87.42 ± 0.68 |
 | w/o Feature View | 87.59 ± 0.50 | 85.84 ± 0.23 | 86.21 ± 0.22 | 86.03 ± 0.17 |
 | w/o Topology View | 86.47 ± 0.76 | 86.47 ± 0.76 | 86.47 ± 0.76 | 86.47 ± 0.76 |
+
+### DBLP
+
+| Variant | Clean | PRBCD Avg. | HetePRBCD Avg. | Attack Avg. |
+|---|---:|---:|---:|---:|
+| Full DVCL | 89.55 ± 0.64 | 87.09 ± 0.77 | 82.04 ± 0.76 | 84.56 ± 0.74 |
+| w/o Cross-view CL | 88.02 ± 1.53 | 86.20 ± 0.62 | 80.07 ± 1.16 | 83.14 ± 0.76 |
+| w/o Feature View | 89.26 ± 0.58 | 86.88 ± 1.18 | 71.16 ± 1.92 | 79.02 ± 1.54 |
+| w/o Topology View | 79.79 ± 0.47 | 79.79 ± 0.47 | 79.79 ± 0.47 | 79.79 ± 0.47 |
 
 ## 6. 异常结果审计与结论边界
 
@@ -270,7 +281,8 @@ AMiner 的预算与 artifact 验证均正确，但替代模型和正式模型下
 2. 多攻击种子复验支持 DVCL 相对 HSeCo 的 ACM/DBLP 总体增益，但不支持 DVCL 在每个数据集、每种攻击上普遍最优。
 3. DVCL 在 DBLP PRBCD 平均下低于 HSeCo；ACM 相对 HAN/HeteroSAGE 的多种子差异未达到校正后显著。
 4. HG 固定迁移攻击、自适应查询攻击和 poisoning 具有不同语义，禁止合并计算总 Attack Average。
-5. 统一 11 模型自适应矩阵已完成；下一步按 topology/feature 视图漂移和预测分歧开展 DVCL 失效诊断，再决定是否改进门控融合。
+5. 统一 11 模型自适应矩阵及视图失效诊断已完成；可靠性门控候选未通过预注册门槛，因此论文模型冻结为 `concat`，并明确 DBLP 自适应目标逃逸脆弱性。
+6. ACM/DBLP 消融均支持双视图和跨视图对比学习的正贡献；DBLP 中移除特征视图后 HetePRBCD 平均下降 10.88 pp，说明特征视图主要缓冲拓扑攻击。
 
 ## 7. 论文图表
 
@@ -286,6 +298,7 @@ AMiner 的预算与 artifact 验证均正确，但替代模型和正式模型下
 
 - 完整扰动率与数据集明细：`docs/acm-experiment-results.md`、`docs/dblp-experiment-results.md`、`docs/aminer-experiment-results.md`
 - 目标逃逸逐模型结果：`docs/target-evasion-results.md`
+- DBLP 消融配对贡献与严格审计：`docs/dblp-ablation-results.md`
 - 鲁棒/OpenHGNN/RND 基线：`docs/robust-baseline-results.md`、`docs/openhgnn-baseline-results.md`、`docs/rnd-attack-results.md`
 - 文档导航与口径优先级：`docs/README.md`
 - 当前有效后续实验计划：`docs/next-experiment-plan.md`
