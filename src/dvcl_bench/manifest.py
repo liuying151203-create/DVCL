@@ -33,7 +33,7 @@ def git_commit(root: Path) -> Optional[str]:
 
 def git_dirty(root: Path) -> Optional[bool]:
     result = subprocess.run(
-        ["git", "status", "--porcelain"],
+        ["git", "status", "--porcelain", "--untracked-files=no"],
         cwd=str(root),
         text=True,
         capture_output=True,

@@ -1,6 +1,7 @@
+import subprocess
 from pathlib import Path
 
-from dvcl_bench.manifest import build_manifest
+from dvcl_bench.manifest import build_manifest, git_dirty
 from dvcl_bench.specs import AttackSpec, ExperimentSpec, ModelSpec, SeedSpec
 
 
@@ -23,3 +24,29 @@ def test_manifest_records_runtime_environment(tmp_path: Path):
     assert "openhgnn" in manifest["environment"]["packages"]
     assert "cuda_available" in manifest["environment"]["accelerator"]
     assert "dgl_backend" in manifest["environment"]["accelerator"]
+
+
+def test_git_dirty_ignores_untracked_files_but_detects_tracked_changes(tmp_path):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "DVCL Test"],
+        cwd=tmp_path,
+        check=True,
+    )
+    tracked = tmp_path / "tracked.txt"
+    tracked.write_text("clean", encoding="utf-8")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "commit", "-qm", "test fixture"], cwd=tmp_path, check=True
+    )
+
+    (tmp_path / "untracked.txt").write_text("ignored", encoding="utf-8")
+    assert git_dirty(tmp_path) is False
+
+    tracked.write_text("changed", encoding="utf-8")
+    assert git_dirty(tmp_path) is True
