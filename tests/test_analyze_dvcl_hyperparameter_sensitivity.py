@@ -41,6 +41,31 @@ def test_matrix_summary_and_stability_cover_frozen_design():
     assert all(row["locally_stable"] for row in stability)
 
 
+def test_stability_loss_is_zero_when_neighbors_outperform_reference():
+    summary = ANALYZER.summarize_rows(_rows())
+    for attack, rate in ANALYZER.CONDITIONS:
+        reference = next(
+            row for row in summary
+            if row["factor"] == "heads"
+            and row["value"] == 4.0
+            and row["attack"] == attack
+            and row["rate"] == rate
+        )
+        for value in (2.0, 8.0):
+            neighbor = next(
+                row for row in summary
+                if row["factor"] == "heads"
+                and row["value"] == value
+                and row["attack"] == attack
+                and row["rate"] == rate
+            )
+            neighbor["micro_f1_mean"] = reference["micro_f1_mean"] + 0.01
+
+    stability = ANALYZER.stability_assessment(summary)
+    heads = next(row for row in stability if row["factor"] == "heads")
+    assert heads["max_local_loss"] == 0.0
+
+
 def test_variant_definitions_require_one_factor_only():
     base = {
         spec["config_key"]: spec["default"]
@@ -78,6 +103,7 @@ def test_report_uses_only_micro_f1_and_freezes_reference():
     report = ANALYZER.render_report(summary, stability, audit)
     assert "Micro-F1" in report
     assert "Macro" not in report
+    assert "配对 Δ" in report
     assert "不根据结果修改已冻结的论文主模型" in report
 
 

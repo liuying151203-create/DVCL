@@ -24,6 +24,7 @@
 | `aminer-poisoning-relation-pilot.md` | AMiner P–A、P–R、联合 poisoning 关系范围门控与阶段 F1 结论 |
 | `dblp-ablation-results.md` | DBLP 四个统一 `w/o` 变体的正式组件消融与阶段 F2 审计 |
 | `dvcl-topology-version-pilot.md` | DBLP 拓扑实现版本对照、阶段 F2.5 审计与 `graph_hard` 冻结结论 |
+| `dvcl-hyperparameter-sensitivity.md` | DBLP 最终 DVCL 的阶段 F3 单因素敏感性与稳定性审计 |
 | `robust-baseline-results.md` | RoHe、HeteroGuard、FastRoHGCN |
 | `openhgnn-baseline-results.md` | HGT、MAGNN、HeCo、SimpleHGN |
 | `rnd-attack-results.md` | RND poisoning |

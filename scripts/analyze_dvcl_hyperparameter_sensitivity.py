@@ -343,7 +343,7 @@ def stability_assessment(summary):
                 for value in values
             )
             best_gaps.append(best - reference)
-        max_local_loss = max(local_losses)
+        max_local_loss = max(0.0, max(local_losses))
         output.append({
             "factor": factor,
             "default": default,
@@ -369,20 +369,27 @@ def render_report(summary, stability, audit):
         r"- 条件：clean 与 HetePRBCD $r=15\%$；配对重复 $(s_a,s_t)=(1,1),(2,2),(3,3)$。",
         r"- 单因素取值：$\lambda_h,\lambda_d\in\{0,0.1,0.5,1,2\}$，$\tau\in\{0.1,0.2,0.5,1,2\}$，$k\in\{5,10,20,40,80\}$，$K\in\{1,2,4,8\}$。",
         r"- 参照值：$(\lambda_h,\lambda_d,\tau,k,K)=(1,1,0.5,20,4)$；$E_{max}=200$，$P=100$；仅报告 Micro-F1。",
+        "- `配对 Δ` 为相同 $(s_a,s_t)$ 下当前取值相对公共参照的 Micro-F1 均值差。",
         "- 本实验只描述敏感性，不根据结果修改已冻结的论文主模型。",
         "",
         "## 实验结果",
         "",
-        "| Parameter | Value | Clean | HetePRBCD 15% | Drop |",
-        "|---|---:|---:|---:|---:|",
+        "| Parameter | Value | Clean | 配对 Δ | HetePRBCD 15% | 配对 Δ | Drop |",
+        "|---|---:|---:|---:|---:|---:|---:|",
     ]
     for factor in FACTOR_ORDER:
+        default = float(FACTOR_SPECS[factor]["default"])
+        clean_reference = lookup[(factor, default, "clean", 0)]
+        attacked_reference = lookup[(factor, default, "heteprbcd", 15)]
         for value in FACTOR_SPECS[factor]["values"]:
             clean = lookup[(factor, float(value), "clean", 0)]
             attacked = lookup[(factor, float(value), "heteprbcd", 15)]
             lines.append(
                 f"| {FACTOR_SPECS[factor]['label']} | {_value(value)} | "
-                f"{_score(clean)} | {_score(attacked)} | "
+                f"{_score(clean)} | "
+                f"{_points(clean['micro_f1_mean'] - clean_reference['micro_f1_mean'])} | "
+                f"{_score(attacked)} | "
+                f"{_points(attacked['micro_f1_mean'] - attacked_reference['micro_f1_mean'])} | "
                 f"{_points(clean['micro_f1_mean'] - attacked['micro_f1_mean'])} |"
             )
     lines.extend([

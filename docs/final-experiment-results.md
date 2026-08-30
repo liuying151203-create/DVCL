@@ -12,10 +12,11 @@
 | 模型自适应目标逃逸 | ACM、DBLP、AMiner | 统一 11 模型 | $(s_a,s_t)=(1,1),(2,2),(3,3)$ | 每模型独立优化攻击边 |
 | 组件消融 | ACM、DBLP | DVCL 四个 variant | $s_{train}=1\ldots5$ | 模块贡献 |
 | 拓扑实现版本审计 | DBLP | DVCL 两个 topology variant | $(s_a,s_t)=(1,1),(2,2),(3,3)$ | 冻结论文方法版本 |
+| 超参数敏感性 | DBLP | DVCL 最终版本 | $(s_a,s_t)=(1,1),(2,2),(3,3)$ | 单因素局部稳定性 |
 
 统一训练设置为 $E_{max}=200$、$P=100$ 和完整模型 checkpoint。Poisoning 扰动率为 $r\in\{5,10,15,20,25\}\%$；目标逃逸预算为 $\Delta\in\{1,3,5\}$。表格报告均值 ± 样本标准差。
 
-完整性检查覆盖 16 套协议、4282/4282 次运行，所有主表单元及方法版本审计均通过覆盖与输入哈希校验。
+完整性检查覆盖 17 套协议、4402/4402 次运行，所有主表单元及方法版本审计均通过覆盖与输入哈希校验。
 
 ## 2. 三数据集统一十一模型全局 Poisoning
 
@@ -276,6 +277,20 @@ ACM 和 AMiner 中 DVCL 在当前 64+64 有限候选攻击下未出现目标 Mic
 
 `graph_no_filter` 相对 `graph_hard` 在 $\Delta=1,3,5$ 下的攻击后 Micro-F1 差异依次为 +4.00、+1.33、-7.33 pp，且最大配对 HetePRBCD 损失为 3.82 pp，未通过预注册门槛。因此论文方法版本冻结为 `graph_hard`；`han_semantic` 不进入同架构敏感性实验。
 
+### DVCL 超参数敏感性
+
+最终 `concat + graph_hard` 在 DBLP clean 与 HetePRBCD 15% 上执行单因素实验。表中范围覆盖全部预注册取值；参照组合为 $(\lambda_h,\lambda_d,\tau,k,K)=(1,1,0.5,20,4)$。
+
+| 参数 | Clean 范围 | HetePRBCD 15% 范围 | 最大局部损失 | 与最佳观测最大差距 | 局部稳定 |
+|---|---:|---:|---:|---:|:---:|
+| $\lambda_h$ | 86.42–89.13 | 82.51–83.91 | 0.96 pp | 0.12 pp | 是 |
+| $\lambda_d$ | 87.40–89.67 | 81.08–84.19 | 0.45 pp | 0.54 pp | 是 |
+| $\tau$ | 88.79–89.33 | 82.88–84.88 | 0.45 pp | 1.09 pp | 是 |
+| $k$ | 88.63–90.06 | 82.84–83.79 | 0.84 pp | 0.93 pp | 是 |
+| $K$ | 88.97–89.45 | 82.15–84.50 | 0.00 pp | 0.71 pp | 是 |
+
+五个参数均通过预注册的 2 pp 局部稳定门槛。该结论描述冻结参数邻域内的稳定性，不将本轮最佳观测值作为重新调参依据。
+
 ## 6. 异常结果审计与结论边界
 
 ### 6.1 AMiner Poisoning 强度
@@ -296,6 +311,7 @@ AMiner 的预算与 artifact 验证均正确，但替代模型和正式模型下
 5. 统一 11 模型自适应矩阵及视图失效诊断已完成；可靠性门控候选未通过预注册门槛，因此论文模型冻结为 `concat`，并明确 DBLP 自适应目标逃逸脆弱性。
 6. ACM/DBLP 消融均支持双视图和跨视图对比学习的正贡献；DBLP 中移除特征视图后 HetePRBCD 平均下降 10.88 pp，说明特征视图主要缓冲拓扑攻击。
 7. 拓扑实现版本审计不支持取消第二级语义硬过滤；F3 超参数敏感性固定使用 `graph_hard`，避免继续混用历史拓扑实现。
+8. F3 的五个预注册参数均通过 2 pp 局部稳定门槛；该结果只覆盖 DBLP clean 与 HetePRBCD 15%，不用于替换冻结参数或外推自适应鲁棒性。
 
 ## 7. 论文图表
 
@@ -307,12 +323,15 @@ AMiner 的预算与 artifact 验证均正确，但替代模型和正式模型下
 
 ![十一模型自适应目标逃逸](figures/paper/adaptive_target_evasion_11model.png)
 
+![DVCL 超参数敏感性](figures/paper/dvcl_hyperparameter_sensitivity.png)
+
 ## 8. 专项附录
 
 - 完整扰动率与数据集明细：`docs/acm-experiment-results.md`、`docs/dblp-experiment-results.md`、`docs/aminer-experiment-results.md`
 - 目标逃逸逐模型结果：`docs/target-evasion-results.md`
 - DBLP 消融配对贡献与严格审计：`docs/dblp-ablation-results.md`
 - DVCL 拓扑实现版本审计：`docs/dvcl-topology-version-pilot.md`
+- DVCL 超参数敏感性：`docs/dvcl-hyperparameter-sensitivity.md`
 - 鲁棒/OpenHGNN/RND 基线：`docs/robust-baseline-results.md`、`docs/openhgnn-baseline-results.md`、`docs/rnd-attack-results.md`
 - 文档导航与口径优先级：`docs/README.md`
 - 当前有效后续实验计划：`docs/next-experiment-plan.md`

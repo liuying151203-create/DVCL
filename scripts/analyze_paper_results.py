@@ -59,6 +59,9 @@ ADAPTIVE_CONFIG = ROOT / "configs" / "protocols" / f"{ADAPTIVE_PROTOCOL}.yaml"
 TOPOLOGY_VERSION_ANALYSIS = (
     ROOT / "outputs" / "analysis" / "dvcl_topology_version_pilot_v1"
 )
+SENSITIVITY_ANALYSIS = (
+    ROOT / "outputs" / "analysis" / "dvcl_hyperparameter_sensitivity_v1"
+)
 EXPECTED_PROTOCOL_RUNS = {
     "acm_poisoning_main_v1": 220,
     "dblp_poisoning_main_v1": 220,
@@ -76,6 +79,7 @@ EXPECTED_PROTOCOL_RUNS = {
     "dblp_poisoning_ablation_v1": 140,
     "dvcl_topology_version_train_pilot_v1": 12,
     "dvcl_topology_version_adaptive_pilot_v1": 6,
+    "dvcl_hyperparameter_sensitivity_v1": 120,
 }
 MODEL_ORDER = (
     "han", "heterosage", "rohe", "heteroguard", "fastrohgcn", "hgt",
@@ -142,6 +146,7 @@ def main() -> int:
     aminer = _aminer_family_rows(rows, targets)
     ablation = _ablation_rows(rows)
     topology_version = _topology_version_results(TOPOLOGY_VERSION_ANALYSIS)
+    sensitivity = _hyperparameter_sensitivity_results(SENSITIVITY_ANALYSIS)
     adaptive_budget = _adaptive_budget_rows(run_root)
     adaptive_rows, adaptive_issues, adaptive_expected, adaptive_completed = (
         collect_adaptive_rows(ADAPTIVE_CONFIG)
@@ -185,6 +190,7 @@ def main() -> int:
             "adaptive_physical_runs": adaptive_completed,
             "adaptive_logical_results": len(adaptive_rows),
             "topology_version_audit": topology_version["audit"],
+            "hyperparameter_sensitivity_audit": sensitivity["audit"],
             "significance_test": "paired two-sided Wilcoxon signed-rank",
             "multiple_testing": "Holm family-wise correction",
             "adaptive_effect_ci": "paired mean Student-t 95% confidence interval",
@@ -198,6 +204,7 @@ def main() -> int:
             benchmark_summary, benchmark_family, multi_family, significance,
             ranks, targets, ablation, adaptive_summary, adaptive_significance,
             adaptive_ranks, aminer_audit, topology_version, protocol_counts,
+            sensitivity,
         ),
         encoding="utf-8",
     )
@@ -525,6 +532,44 @@ def _topology_version_results(output_root):
     }
 
 
+def _hyperparameter_sensitivity_results(output_root):
+    required = ("sensitivity_summary.csv", "stability.json", "audit.json")
+    missing = [name for name in required if not (output_root / name).is_file()]
+    if missing:
+        raise ValueError(
+            f"Missing hyperparameter-sensitivity files {missing}: {output_root}"
+        )
+    audit = json.loads((output_root / "audit.json").read_text(encoding="utf-8"))
+    if (
+        not audit.get("ok")
+        or audit.get("issues")
+        or audit.get("physical_runs") != "120/120"
+        or audit.get("manifest_count") != 120
+        or audit.get("dirty_manifests") != 0
+        or len(audit.get("manifest_git_commits", [])) != 1
+    ):
+        raise ValueError(f"Invalid hyperparameter-sensitivity audit: {audit}")
+    summary = _read_numeric_csv(
+        output_root / "sensitivity_summary.csv",
+        ("value", "rate", "n", "micro_f1_mean", "micro_f1_std"),
+    )
+    stability = json.loads(
+        (output_root / "stability.json").read_text(encoding="utf-8")
+    )
+    expected_factors = {"lambda_h", "lambda_d", "tau", "k", "heads"}
+    if (
+        len(summary) != 48
+        or len(stability) != 5
+        or {row["factor"] for row in summary} != expected_factors
+        or {row["factor"] for row in stability} != expected_factors
+    ):
+        raise ValueError(
+            "Incomplete hyperparameter-sensitivity summaries: "
+            f"summary={len(summary)} stability={len(stability)}"
+        )
+    return {"summary": summary, "stability": stability, "audit": audit}
+
+
 def _read_numeric_csv(path, numeric_fields):
     with path.open(newline="", encoding="utf-8-sig") as stream:
         rows = list(csv.DictReader(stream))
@@ -548,7 +593,7 @@ def _score(row):
 def _final_document(
     benchmark, benchmark_family, multi_family, significance, ranks, targets,
     ablation, adaptive, adaptive_significance, adaptive_ranks, aminer_audit,
-    topology_version, protocol_counts,
+    topology_version, protocol_counts, sensitivity,
 ):
     completed = sum(row["completed"] for row in protocol_counts)
     lines = [
@@ -566,6 +611,7 @@ def _final_document(
         "| 模型自适应目标逃逸 | ACM、DBLP、AMiner | 统一 11 模型 | $(s_a,s_t)=(1,1),(2,2),(3,3)$ | 每模型独立优化攻击边 |",
         "| 组件消融 | ACM、DBLP | DVCL 四个 variant | $s_{train}=1\\ldots5$ | 模块贡献 |",
         "| 拓扑实现版本审计 | DBLP | DVCL 两个 topology variant | $(s_a,s_t)=(1,1),(2,2),(3,3)$ | 冻结论文方法版本 |",
+        "| 超参数敏感性 | DBLP | DVCL 最终版本 | $(s_a,s_t)=(1,1),(2,2),(3,3)$ | 单因素局部稳定性 |",
         "",
         "统一训练设置为 $E_{max}=200$、$P=100$ 和完整模型 checkpoint。Poisoning 扰动率为 $r\\in\\{5,10,15,20,25\\}\\%$；目标逃逸预算为 $\\Delta\\in\\{1,3,5\\}$。表格报告均值 ± 样本标准差。",
         "",
@@ -667,6 +713,7 @@ def _final_document(
         lines.extend(_ablation_table_lines(ablation, dataset))
         lines.append("")
     lines.extend(_topology_version_lines(topology_version))
+    lines.extend(_hyperparameter_sensitivity_lines(sensitivity))
     lines.extend([
         "## 6. 异常结果审计与结论边界",
         "",
@@ -696,6 +743,7 @@ def _final_document(
         "5. 统一 11 模型自适应矩阵及视图失效诊断已完成；可靠性门控候选未通过预注册门槛，因此论文模型冻结为 `concat`，并明确 DBLP 自适应目标逃逸脆弱性。",
         "6. ACM/DBLP 消融均支持双视图和跨视图对比学习的正贡献；DBLP 中移除特征视图后 HetePRBCD 平均下降 10.88 pp，说明特征视图主要缓冲拓扑攻击。",
         "7. 拓扑实现版本审计不支持取消第二级语义硬过滤；F3 超参数敏感性固定使用 `graph_hard`，避免继续混用历史拓扑实现。",
+        "8. F3 的五个预注册参数均通过 2 pp 局部稳定门槛；该结果只覆盖 DBLP clean 与 HetePRBCD 15%，不用于替换冻结参数或外推自适应鲁棒性。",
         "",
         "## 7. 论文图表",
         "",
@@ -707,12 +755,15 @@ def _final_document(
         "",
         "![十一模型自适应目标逃逸](figures/paper/adaptive_target_evasion_11model.png)",
         "",
+        "![DVCL 超参数敏感性](figures/paper/dvcl_hyperparameter_sensitivity.png)",
+        "",
         "## 8. 专项附录",
         "",
         "- 完整扰动率与数据集明细：`docs/acm-experiment-results.md`、`docs/dblp-experiment-results.md`、`docs/aminer-experiment-results.md`",
         "- 目标逃逸逐模型结果：`docs/target-evasion-results.md`",
         "- DBLP 消融配对贡献与严格审计：`docs/dblp-ablation-results.md`",
         "- DVCL 拓扑实现版本审计：`docs/dvcl-topology-version-pilot.md`",
+        "- DVCL 超参数敏感性：`docs/dvcl-hyperparameter-sensitivity.md`",
         "- 鲁棒/OpenHGNN/RND 基线：`docs/robust-baseline-results.md`、`docs/openhgnn-baseline-results.md`、`docs/rnd-attack-results.md`",
         "- 文档导航与口径优先级：`docs/README.md`",
         "- 当前有效后续实验计划：`docs/next-experiment-plan.md`",
@@ -775,6 +826,48 @@ def _topology_version_lines(result):
         f"{100 * adaptive_gains[1]:+.2f}、{100 * adaptive_gains[3]:+.2f}、"
         f"{100 * adaptive_gains[5]:+.2f} pp，且最大配对 HetePRBCD 损失为 "
         f"{100 * candidate['max_heteprbcd_loss']:.2f} pp，未通过预注册门槛。因此论文方法版本冻结为 `graph_hard`；`han_semantic` 不进入同架构敏感性实验。",
+        "",
+    ])
+    return lines
+
+
+def _hyperparameter_sensitivity_lines(result):
+    labels = {
+        "lambda_h": "$\\lambda_h$",
+        "lambda_d": "$\\lambda_d$",
+        "tau": "$\\tau$",
+        "k": "$k$",
+        "heads": "$K$",
+    }
+    stability = {row["factor"]: row for row in result["stability"]}
+    lines = [
+        "### DVCL 超参数敏感性",
+        "",
+        "最终 `concat + graph_hard` 在 DBLP clean 与 HetePRBCD 15% 上执行单因素实验。表中范围覆盖全部预注册取值；参照组合为 $(\\lambda_h,\\lambda_d,\\tau,k,K)=(1,1,0.5,20,4)$。",
+        "",
+        "| 参数 | Clean 范围 | HetePRBCD 15% 范围 | 最大局部损失 | 与最佳观测最大差距 | 局部稳定 |",
+        "|---|---:|---:|---:|---:|:---:|",
+    ]
+    for factor in ("lambda_h", "lambda_d", "tau", "k", "heads"):
+        clean = [
+            row["micro_f1_mean"] for row in result["summary"]
+            if row["factor"] == factor and row["attack"] == "clean"
+        ]
+        attacked = [
+            row["micro_f1_mean"] for row in result["summary"]
+            if row["factor"] == factor and row["attack"] == "heteprbcd"
+        ]
+        row = stability[factor]
+        lines.append(
+            f"| {labels[factor]} | {100 * min(clean):.2f}–{100 * max(clean):.2f} | "
+            f"{100 * min(attacked):.2f}–{100 * max(attacked):.2f} | "
+            f"{100 * row['max_local_loss']:.2f} pp | "
+            f"{100 * row['max_gap_to_best']:.2f} pp | "
+            f"{'是' if row['locally_stable'] else '否'} |"
+        )
+    lines.extend([
+        "",
+        "五个参数均通过预注册的 2 pp 局部稳定门槛。该结论描述冻结参数邻域内的稳定性，不将本轮最佳观测值作为重新调参依据。",
         "",
     ])
     return lines

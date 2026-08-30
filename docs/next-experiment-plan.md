@@ -272,6 +272,15 @@ python scripts/run_suite.py \
 python scripts/analyze_dvcl_hyperparameter_sensitivity.py
 ```
 
+### 阶段 F3 验收结论
+
+- 120/120 次物理训练全部完成，`metrics.json`、`manifest.json`、`history.csv` 与 checkpoint 均为 120 份；失败与缺失均为 0。
+- 全部 manifest 来自干净提交 `0500c501f73c49375351bd0d1aa155ce85228e96`，Python 3.9、CUDA 和输入审计均通过。
+- 参照组合的 clean 与 HetePRBCD 15% Micro-F1 分别为 89.13 ± 0.31 和 83.79 ± 4.43。
+- $\lambda_h,\lambda_d,\tau,k,K$ 的最大局部损失依次为 0.96、0.45、0.45、0.84、0.00 pp，均低于预注册的 2 pp 门槛。
+- 结果支持“冻结参数在 DBLP 代表性 poisoning 条件下局部稳定”，但不触发换参，也不外推为自适应鲁棒性证据。
+- 结果见 `docs/dvcl-hyperparameter-sensitivity.md`，机器审计见 `outputs/analysis/dvcl_hyperparameter_sensitivity_v1/`。
+
 ## 9. 阶段 G：最终冻结
 
 - 重新运行结果汇总和文档生成器。
@@ -290,4 +299,4 @@ python scripts/analyze_dvcl_hyperparameter_sensitivity.py
 
 ## 10. 开工顺序
 
-阶段 A–E、F1、F2 和 F2.5 已全部验收。论文模型保持 `concat + graph_hard`，不主张普遍自适应鲁棒性。F3 已获批准并冻结为 DBLP clean/HetePRBCD-15 的 120 次单因素训练；协议实现和输入审计完成并提交后，开始正式运行与半小时进度监控。
+阶段 A–E、F1、F2、F2.5 和 F3 已全部验收。论文模型保持 `concat + graph_hard`，不主张普遍自适应鲁棒性。下一步进入 F4：先冻结统一硬件、预热次数、重复次数和计时边界，再测量参数量、训练时间、推理时间、攻击查询成本与峰值显存；F4 完成并暂停汇报后再进入 F5。
