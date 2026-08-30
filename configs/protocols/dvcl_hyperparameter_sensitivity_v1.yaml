@@ -1,0 +1,114 @@
+protocol: dvcl_hyperparameter_sensitivity_v1
+device: cuda:0
+
+dataset: dblp
+model: dvcl
+backend: native
+model_config_path: configs/models/dvcl.yaml
+split_name_pattern: paper_seed_{seed}
+
+variants:
+  - name: reference
+    factor: reference
+    value: null
+    model_config: {}
+  - name: lambda_h_0
+    factor: lambda_h
+    value: 0.0
+    model_config: {lambda_han: 0.0}
+  - name: lambda_h_0p1
+    factor: lambda_h
+    value: 0.1
+    model_config: {lambda_han: 0.1}
+  - name: lambda_h_0p5
+    factor: lambda_h
+    value: 0.5
+    model_config: {lambda_han: 0.5}
+  - name: lambda_h_2
+    factor: lambda_h
+    value: 2.0
+    model_config: {lambda_han: 2.0}
+  - name: lambda_d_0
+    factor: lambda_d
+    value: 0.0
+    model_config: {lambda_dvcl: 0.0}
+  - name: lambda_d_0p1
+    factor: lambda_d
+    value: 0.1
+    model_config: {lambda_dvcl: 0.1}
+  - name: lambda_d_0p5
+    factor: lambda_d
+    value: 0.5
+    model_config: {lambda_dvcl: 0.5}
+  - name: lambda_d_2
+    factor: lambda_d
+    value: 2.0
+    model_config: {lambda_dvcl: 2.0}
+  - name: tau_0p1
+    factor: tau
+    value: 0.1
+    model_config: {temperature: 0.1}
+  - name: tau_0p2
+    factor: tau
+    value: 0.2
+    model_config: {temperature: 0.2}
+  - name: tau_1
+    factor: tau
+    value: 1.0
+    model_config: {temperature: 1.0}
+  - name: tau_2
+    factor: tau
+    value: 2.0
+    model_config: {temperature: 2.0}
+  - name: k_5
+    factor: k
+    value: 5
+    model_config: {knn_k: 5}
+  - name: k_10
+    factor: k
+    value: 10
+    model_config: {knn_k: 10}
+  - name: k_40
+    factor: k
+    value: 40
+    model_config: {knn_k: 40}
+  - name: k_80
+    factor: k
+    value: 80
+    model_config: {knn_k: 80}
+  - name: heads_1
+    factor: heads
+    value: 1
+    model_config: {heads: 1}
+  - name: heads_2
+    factor: heads
+    value: 2
+    model_config: {heads: 2}
+  - name: heads_8
+    factor: heads
+    value: 8
+    model_config: {heads: 8}
+
+attacks:
+  - name: clean
+    rates: [0]
+    threat_model: poisoning
+    scope: global
+  - name: heteprbcd
+    rates: [15]
+    threat_model: poisoning
+    scope: global
+
+seeds:
+  split: [1]
+  pairs:
+    - attack: 1
+      train: 1
+    - attack: 2
+      train: 2
+    - attack: 3
+      train: 3
+
+training:
+  epochs: 200
+  patience: 100

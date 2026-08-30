@@ -251,6 +251,27 @@ python scripts/analyze_dvcl_view_diagnosis.py
 - 冻结 `graph_hard` 进入 F3，不更换论文方法版本；`han_semantic` 不进入同架构敏感性矩阵。
 - 结果见 `docs/dvcl-topology-version-pilot.md`，机器审计见 `outputs/analysis/dvcl_topology_version_pilot_v1/`。
 
+### 阶段 F3 预注册协议
+
+- 目的：描述已冻结 `concat + graph_hard` 模型的单因素稳定性，不把敏感性实验作为赛后调参，也不依据本轮最优观测值修改主模型。
+- 数据集与攻击：DBLP 的 clean 与 HetePRBCD $r=15\%$。现有 15 个配对重复中，DVCL 在 HetePRBCD 5%、15%、25% 下的 Micro-F1 分别为 85.53、83.13、83.66，因此 15% 是已审计全局 poisoning 条件中的最强代表点。
+- 参数范围：$\lambda_h,\lambda_d\in\{0,0.1,0.5,1,2\}$，$\tau\in\{0.1,0.2,0.5,1,2\}$，$k\in\{5,10,20,40,80\}$，$K\in\{1,2,4,8\}$。
+- 参照值：$(\lambda_h,\lambda_d,\tau,k,K)=(1,1,0.5,20,4)$；每个非参照变体只覆盖一个配置键。大写 $K$ 对应双视图 GAT 的 `heads`，固定每头隐藏维度，因此其变化同时反映多头数与总表示容量变化，需结合 F4 参数量解释。
+- 重复与规模：$(s_a,s_t)=(1,1),(2,2),(3,3)$；用一个公共参照变体避免重复训练默认组合，共 20 个唯一变体、$20\times2\times3=120$ 次物理训练。
+- 主结果：按参数值分别报告 clean 与 HetePRBCD 15% Micro-F1 均值和样本标准差，并报告同 seed 相对公共参照的配对差值；不报告 Macro-F1。
+- 局部稳定门槛：每个参数取参照值两侧最近邻，在 clean 和 HetePRBCD 两个条件中的最大配对均值损失不超过 2 pp；门槛只决定论文中能否表述“局部稳定”，不触发主模型换参。
+- 威胁边界：本阶段覆盖最强代表性全局 poisoning，不执行每个超参数版本的自适应目标搜索；自适应脆弱性继续沿用 F2.5 的冻结版本结论，禁止将 F3 曲线外推为自适应鲁棒性证据。
+- 完整性要求：120/120 次运行、120 个干净 manifest、单一 Git 提交、输入路径与 SHA-256、单因素配置不变量、配对 seed 和结果覆盖全部通过审计。
+
+```bash
+source scripts/activate_gpu_env.sh
+python scripts/check_protocol_inputs.py \
+  --config configs/protocols/dvcl_hyperparameter_sensitivity_v1.yaml
+python scripts/run_suite.py \
+  --config configs/protocols/dvcl_hyperparameter_sensitivity_v1.yaml
+python scripts/analyze_dvcl_hyperparameter_sensitivity.py
+```
+
 ## 9. 阶段 G：最终冻结
 
 - 重新运行结果汇总和文档生成器。
@@ -269,4 +290,4 @@ python scripts/analyze_dvcl_view_diagnosis.py
 
 ## 10. 开工顺序
 
-阶段 A–E、F1、F2 和 F2.5 已全部验收。论文模型保持 `concat + graph_hard`，不主张普遍自适应鲁棒性。当前在 F2.5 阶段边界暂停；确认后进入 F3，先冻结 $\lambda_h,\lambda_d,\tau,k,K$ 的单因素取值、参照值、最强攻击条件和预计运行数，再开始正式敏感性实验。
+阶段 A–E、F1、F2 和 F2.5 已全部验收。论文模型保持 `concat + graph_hard`，不主张普遍自适应鲁棒性。F3 已获批准并冻结为 DBLP clean/HetePRBCD-15 的 120 次单因素训练；协议实现和输入审计完成并提交后，开始正式运行与半小时进度监控。

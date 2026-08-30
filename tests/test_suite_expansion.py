@@ -420,6 +420,27 @@ def test_seed_filters_preserve_configured_pairs():
     assert commands[0][commands[0].index("--train-seed") + 1] == "2"
 
 
+def test_dvcl_hyperparameter_sensitivity_has_120_one_factor_runs():
+    config = RUN_SUITE.load_config(
+        ROOT / "configs" / "protocols" /
+        "dvcl_hyperparameter_sensitivity_v1.yaml"
+    )
+    commands = list(RUN_SUITE.commands(config, "python", ROOT))
+    assert len(commands) == 120
+    model_configs = [
+        json.loads(command[command.index("--model-config-json") + 1])
+        for command in commands
+    ]
+    assert {value["variant"] for value in model_configs} == {
+        variant["name"] for variant in config["variants"]
+    }
+    assert all(value["topology_source"] == "graph" for value in model_configs)
+    assert all(
+        value["semantic_topology_filter"] == "hard"
+        for value in model_configs
+    )
+
+
 def test_cuda_oom_is_retried_without_retrying_other_failures():
     responses = iter([
         SimpleNamespace(returncode=RUN_SUITE.CUDA_OOM_EXIT_CODE),
