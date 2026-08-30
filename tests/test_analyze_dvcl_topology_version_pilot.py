@@ -1,4 +1,5 @@
 from scripts import analyze_dvcl_topology_version_pilot as ANALYZER
+from scripts import analyze_paper_results as PAPER
 
 
 def _training_rows(clean_offsets=None, poisoning_offsets=None):
@@ -89,4 +90,22 @@ def test_render_report_uses_only_micro_f1_result_metric():
     report = ANALYZER.render_report(training, adaptive, decision, audit)
     assert "Micro-F1" in report
     assert "Macro" not in report
+    assert "## 结果分析" in report
+    assert "低预算优势未随预算保持" in report
     assert "## 版本判定" in report
+
+
+def test_paper_topology_section_uses_audited_summary():
+    training = ANALYZER.summarize_training(_training_rows())
+    adaptive = _adaptive_summary()
+    decision = ANALYZER.topology_version_decision(
+        _training_rows(), adaptive
+    )
+    section = "\n".join(PAPER._topology_version_lines({
+        "training": training,
+        "adaptive": adaptive,
+        "decision": decision,
+    }))
+    assert "### 拓扑实现版本审计" in section
+    assert "Graph + hard filter" in section
+    assert "Macro" not in section

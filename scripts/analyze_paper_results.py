@@ -56,6 +56,9 @@ ABLATION_PROTOCOLS = (
 )
 ADAPTIVE_PROTOCOL = "adaptive_target_evasion_v1"
 ADAPTIVE_CONFIG = ROOT / "configs" / "protocols" / f"{ADAPTIVE_PROTOCOL}.yaml"
+TOPOLOGY_VERSION_ANALYSIS = (
+    ROOT / "outputs" / "analysis" / "dvcl_topology_version_pilot_v1"
+)
 EXPECTED_PROTOCOL_RUNS = {
     "acm_poisoning_main_v1": 220,
     "dblp_poisoning_main_v1": 220,
@@ -71,6 +74,8 @@ EXPECTED_PROTOCOL_RUNS = {
     "adaptive_target_evasion_v1": 99,
     "acm_poisoning_ablation_v1": 140,
     "dblp_poisoning_ablation_v1": 140,
+    "dvcl_topology_version_train_pilot_v1": 12,
+    "dvcl_topology_version_adaptive_pilot_v1": 6,
 }
 MODEL_ORDER = (
     "han", "heterosage", "rohe", "heteroguard", "fastrohgcn", "hgt",
@@ -136,6 +141,7 @@ def main() -> int:
     targets = target_summary(target_rows)
     aminer = _aminer_family_rows(rows, targets)
     ablation = _ablation_rows(rows)
+    topology_version = _topology_version_results(TOPOLOGY_VERSION_ANALYSIS)
     adaptive_budget = _adaptive_budget_rows(run_root)
     adaptive_rows, adaptive_issues, adaptive_expected, adaptive_completed = (
         collect_adaptive_rows(ADAPTIVE_CONFIG)
@@ -178,6 +184,7 @@ def main() -> int:
             "target_runs": len(target_rows),
             "adaptive_physical_runs": adaptive_completed,
             "adaptive_logical_results": len(adaptive_rows),
+            "topology_version_audit": topology_version["audit"],
             "significance_test": "paired two-sided Wilcoxon signed-rank",
             "multiple_testing": "Holm family-wise correction",
             "adaptive_effect_ci": "paired mean Student-t 95% confidence interval",
@@ -190,7 +197,7 @@ def main() -> int:
         _final_document(
             benchmark_summary, benchmark_family, multi_family, significance,
             ranks, targets, ablation, adaptive_summary, adaptive_significance,
-            adaptive_ranks, aminer_audit, protocol_counts,
+            adaptive_ranks, aminer_audit, topology_version, protocol_counts,
         ),
         encoding="utf-8",
     )
@@ -467,6 +474,66 @@ def _write_csv(path, rows):
         writer.writerows(rows)
 
 
+def _topology_version_results(output_root):
+    required = (
+        "training_summary.csv", "adaptive_summary.csv", "audit.json",
+        "decision.json",
+    )
+    missing = [name for name in required if not (output_root / name).is_file()]
+    if missing:
+        raise ValueError(
+            f"Missing topology-version analysis files {missing}: {output_root}"
+        )
+    audit = json.loads((output_root / "audit.json").read_text(encoding="utf-8"))
+    decision = json.loads(
+        (output_root / "decision.json").read_text(encoding="utf-8")
+    )
+    if (
+        not audit.get("ok")
+        or audit.get("issues")
+        or audit.get("training_physical_runs") != "12/12"
+        or audit.get("adaptive_physical_runs") != "6/6"
+        or audit.get("adaptive_logical_results") != "18/18"
+        or audit.get("dirty_manifests") != 0
+        or len(audit.get("manifest_git_commits", [])) != 1
+    ):
+        raise ValueError(f"Invalid topology-version audit: {audit}")
+    if decision.get("selected_variant") != "graph_hard":
+        raise ValueError(f"Unexpected topology-version decision: {decision}")
+    training = _read_numeric_csv(
+        output_root / "training_summary.csv",
+        ("rate", "n", "micro_f1_mean", "micro_f1_std"),
+    )
+    adaptive = _read_numeric_csv(
+        output_root / "adaptive_summary.csv",
+        (
+            "rate", "n", "clean_target_micro_f1_mean",
+            "attacked_target_micro_f1_mean", "attacked_target_micro_f1_std",
+            "micro_f1_drop_mean",
+        ),
+    )
+    if len(training) != 4 or len(adaptive) != 6:
+        raise ValueError(
+            "Incomplete topology-version summaries: "
+            f"training={len(training)} adaptive={len(adaptive)}"
+        )
+    return {
+        "training": training,
+        "adaptive": adaptive,
+        "audit": audit,
+        "decision": decision,
+    }
+
+
+def _read_numeric_csv(path, numeric_fields):
+    with path.open(newline="", encoding="utf-8-sig") as stream:
+        rows = list(csv.DictReader(stream))
+    for row in rows:
+        for field in numeric_fields:
+            row[field] = float(row[field])
+    return rows
+
+
 def _lookup(rows, **conditions):
     for row in rows:
         if all(row.get(key) == value for key, value in conditions.items()):
@@ -481,7 +548,7 @@ def _score(row):
 def _final_document(
     benchmark, benchmark_family, multi_family, significance, ranks, targets,
     ablation, adaptive, adaptive_significance, adaptive_ranks, aminer_audit,
-    protocol_counts,
+    topology_version, protocol_counts,
 ):
     completed = sum(row["completed"] for row in protocol_counts)
     lines = [
@@ -498,10 +565,11 @@ def _final_document(
         "| 多攻击种子统计复验 | ACM、DBLP | HAN、HeteroSAGE、HSeCo、DVCL | $s_{atk}=1\\ldots3,s_{train}=1\\ldots5$ | 显著性与攻击种子稳定性 |",
         "| 模型自适应目标逃逸 | ACM、DBLP、AMiner | 统一 11 模型 | $(s_a,s_t)=(1,1),(2,2),(3,3)$ | 每模型独立优化攻击边 |",
         "| 组件消融 | ACM、DBLP | DVCL 四个 variant | $s_{train}=1\\ldots5$ | 模块贡献 |",
+        "| 拓扑实现版本审计 | DBLP | DVCL 两个 topology variant | $(s_a,s_t)=(1,1),(2,2),(3,3)$ | 冻结论文方法版本 |",
         "",
         "统一训练设置为 $E_{max}=200$、$P=100$ 和完整模型 checkpoint。Poisoning 扰动率为 $r\\in\\{5,10,15,20,25\\}\\%$；目标逃逸预算为 $\\Delta\\in\\{1,3,5\\}$。表格报告均值 ± 样本标准差。",
         "",
-        f"完整性检查覆盖 {len(protocol_counts)} 套协议、{completed}/{completed} 次运行，所有主表单元均通过三数据集×十一模型覆盖校验。",
+        f"完整性检查覆盖 {len(protocol_counts)} 套协议、{completed}/{completed} 次运行，所有主表单元及方法版本审计均通过覆盖与输入哈希校验。",
         "",
         "## 2. 三数据集统一十一模型全局 Poisoning",
         "",
@@ -598,6 +666,7 @@ def _final_document(
         ])
         lines.extend(_ablation_table_lines(ablation, dataset))
         lines.append("")
+    lines.extend(_topology_version_lines(topology_version))
     lines.extend([
         "## 6. 异常结果审计与结论边界",
         "",
@@ -626,6 +695,7 @@ def _final_document(
         "4. HG 固定迁移攻击、自适应查询攻击和 poisoning 具有不同语义，禁止合并计算总 Attack Average。",
         "5. 统一 11 模型自适应矩阵及视图失效诊断已完成；可靠性门控候选未通过预注册门槛，因此论文模型冻结为 `concat`，并明确 DBLP 自适应目标逃逸脆弱性。",
         "6. ACM/DBLP 消融均支持双视图和跨视图对比学习的正贡献；DBLP 中移除特征视图后 HetePRBCD 平均下降 10.88 pp，说明特征视图主要缓冲拓扑攻击。",
+        "7. 拓扑实现版本审计不支持取消第二级语义硬过滤；F3 超参数敏感性固定使用 `graph_hard`，避免继续混用历史拓扑实现。",
         "",
         "## 7. 论文图表",
         "",
@@ -642,12 +712,72 @@ def _final_document(
         "- 完整扰动率与数据集明细：`docs/acm-experiment-results.md`、`docs/dblp-experiment-results.md`、`docs/aminer-experiment-results.md`",
         "- 目标逃逸逐模型结果：`docs/target-evasion-results.md`",
         "- DBLP 消融配对贡献与严格审计：`docs/dblp-ablation-results.md`",
+        "- DVCL 拓扑实现版本审计：`docs/dvcl-topology-version-pilot.md`",
         "- 鲁棒/OpenHGNN/RND 基线：`docs/robust-baseline-results.md`、`docs/openhgnn-baseline-results.md`、`docs/rnd-attack-results.md`",
         "- 文档导航与口径优先级：`docs/README.md`",
         "- 当前有效后续实验计划：`docs/next-experiment-plan.md`",
         "",
     ])
     return "\n".join(lines)
+
+
+def _topology_version_lines(result):
+    training = {
+        (row["variant"], row["attack"], int(row["rate"])): row
+        for row in result["training"]
+    }
+    adaptive = {
+        (row["variant"], int(row["rate"])): row
+        for row in result["adaptive"]
+    }
+    labels = {
+        "graph_hard": "Graph + hard filter + $L_{HAN}$",
+        "graph_no_filter": "Graph + no second filter + $L_{HAN}$",
+    }
+    lines = [
+        "### 拓扑实现版本审计",
+        "",
+        "两个版本均使用 $\\lambda_h=1$，仅比较第二级语义硬过滤是否保留。正式审计包含 clean、HetePRBCD 25% 和针对各自 checkpoint 独立优化的目标逃逸攻击。",
+        "",
+        "| Variant | Clean | HetePRBCD 25% | Adaptive $\\Delta=1$ | Adaptive $\\Delta=3$ | Adaptive $\\Delta=5$ |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for variant in ("graph_hard", "graph_no_filter"):
+        clean = training[(variant, "clean", 0)]
+        poisoning = training[(variant, "heteprbcd", 25)]
+        cells = [
+            _score(clean),
+            _score(poisoning),
+            *(
+                _adaptive_score(adaptive[(variant, rate)])
+                for rate in (1, 3, 5)
+            ),
+        ]
+        lines.append(f"| {labels[variant]} | " + " | ".join(cells) + " |")
+    candidate = next(
+        row for row in result["decision"]["candidates"]
+        if row["variant"] == "graph_no_filter"
+    )
+    adaptive_gains = {
+        rate: (
+            adaptive[("graph_no_filter", rate)][
+                "attacked_target_micro_f1_mean"
+            ]
+            - adaptive[("graph_hard", rate)][
+                "attacked_target_micro_f1_mean"
+            ]
+        )
+        for rate in (1, 3, 5)
+    }
+    lines.extend([
+        "",
+        "`graph_no_filter` 相对 `graph_hard` 在 $\\Delta=1,3,5$ 下的攻击后 Micro-F1 差异依次为 "
+        f"{100 * adaptive_gains[1]:+.2f}、{100 * adaptive_gains[3]:+.2f}、"
+        f"{100 * adaptive_gains[5]:+.2f} pp，且最大配对 HetePRBCD 损失为 "
+        f"{100 * candidate['max_heteprbcd_loss']:.2f} pp，未通过预注册门槛。因此论文方法版本冻结为 `graph_hard`；`han_semantic` 不进入同架构敏感性实验。",
+        "",
+    ])
+    return lines
 
 
 def _benchmark_table_lines(summary, family, dataset):

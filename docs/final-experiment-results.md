@@ -11,10 +11,11 @@
 | 多攻击种子统计复验 | ACM、DBLP | HAN、HeteroSAGE、HSeCo、DVCL | $s_{atk}=1\ldots3,s_{train}=1\ldots5$ | 显著性与攻击种子稳定性 |
 | 模型自适应目标逃逸 | ACM、DBLP、AMiner | 统一 11 模型 | $(s_a,s_t)=(1,1),(2,2),(3,3)$ | 每模型独立优化攻击边 |
 | 组件消融 | ACM、DBLP | DVCL 四个 variant | $s_{train}=1\ldots5$ | 模块贡献 |
+| 拓扑实现版本审计 | DBLP | DVCL 两个 topology variant | $(s_a,s_t)=(1,1),(2,2),(3,3)$ | 冻结论文方法版本 |
 
 统一训练设置为 $E_{max}=200$、$P=100$ 和完整模型 checkpoint。Poisoning 扰动率为 $r\in\{5,10,15,20,25\}\%$；目标逃逸预算为 $\Delta\in\{1,3,5\}$。表格报告均值 ± 样本标准差。
 
-完整性检查覆盖 14 套协议、4264/4264 次运行，所有主表单元均通过三数据集×十一模型覆盖校验。
+完整性检查覆盖 16 套协议、4282/4282 次运行，所有主表单元及方法版本审计均通过覆盖与输入哈希校验。
 
 ## 2. 三数据集统一十一模型全局 Poisoning
 
@@ -264,6 +265,17 @@ ACM 和 AMiner 中 DVCL 在当前 64+64 有限候选攻击下未出现目标 Mic
 | w/o Feature View | 89.26 ± 0.58 | 86.88 ± 1.18 | 71.16 ± 1.92 | 79.02 ± 1.54 |
 | w/o Topology View | 79.79 ± 0.47 | 79.79 ± 0.47 | 79.79 ± 0.47 | 79.79 ± 0.47 |
 
+### 拓扑实现版本审计
+
+两个版本均使用 $\lambda_h=1$，仅比较第二级语义硬过滤是否保留。正式审计包含 clean、HetePRBCD 25% 和针对各自 checkpoint 独立优化的目标逃逸攻击。
+
+| Variant | Clean | HetePRBCD 25% | Adaptive $\Delta=1$ | Adaptive $\Delta=3$ | Adaptive $\Delta=5$ |
+|---|---:|---:|---:|---:|---:|
+| Graph + hard filter + $L_{HAN}$ | 89.13 ± 0.31 | 83.75 ± 2.37 | 57.33 ± 3.06 | 42.00 ± 2.00 | 40.67 ± 2.31 |
+| Graph + no second filter + $L_{HAN}$ | 88.60 ± 0.26 | 82.08 ± 1.19 | 61.33 ± 3.06 | 43.33 ± 1.15 | 33.33 ± 3.06 |
+
+`graph_no_filter` 相对 `graph_hard` 在 $\Delta=1,3,5$ 下的攻击后 Micro-F1 差异依次为 +4.00、+1.33、-7.33 pp，且最大配对 HetePRBCD 损失为 3.82 pp，未通过预注册门槛。因此论文方法版本冻结为 `graph_hard`；`han_semantic` 不进入同架构敏感性实验。
+
 ## 6. 异常结果审计与结论边界
 
 ### 6.1 AMiner Poisoning 强度
@@ -283,6 +295,7 @@ AMiner 的预算与 artifact 验证均正确，但替代模型和正式模型下
 4. HG 固定迁移攻击、自适应查询攻击和 poisoning 具有不同语义，禁止合并计算总 Attack Average。
 5. 统一 11 模型自适应矩阵及视图失效诊断已完成；可靠性门控候选未通过预注册门槛，因此论文模型冻结为 `concat`，并明确 DBLP 自适应目标逃逸脆弱性。
 6. ACM/DBLP 消融均支持双视图和跨视图对比学习的正贡献；DBLP 中移除特征视图后 HetePRBCD 平均下降 10.88 pp，说明特征视图主要缓冲拓扑攻击。
+7. 拓扑实现版本审计不支持取消第二级语义硬过滤；F3 超参数敏感性固定使用 `graph_hard`，避免继续混用历史拓扑实现。
 
 ## 7. 论文图表
 
@@ -299,6 +312,7 @@ AMiner 的预算与 artifact 验证均正确，但替代模型和正式模型下
 - 完整扰动率与数据集明细：`docs/acm-experiment-results.md`、`docs/dblp-experiment-results.md`、`docs/aminer-experiment-results.md`
 - 目标逃逸逐模型结果：`docs/target-evasion-results.md`
 - DBLP 消融配对贡献与严格审计：`docs/dblp-ablation-results.md`
+- DVCL 拓扑实现版本审计：`docs/dvcl-topology-version-pilot.md`
 - 鲁棒/OpenHGNN/RND 基线：`docs/robust-baseline-results.md`、`docs/openhgnn-baseline-results.md`、`docs/rnd-attack-results.md`
 - 文档导航与口径优先级：`docs/README.md`
 - 当前有效后续实验计划：`docs/next-experiment-plan.md`

@@ -284,6 +284,28 @@ def render_report(training_summary, adaptive_summary, decision, audit):
             )
             + f" | {_points(rate5['micro_f1_drop_mean'])} |"
         )
+    no_filter_gains = {
+        rate: (
+            adaptive[("graph_no_filter", rate)][
+                "attacked_target_micro_f1_mean"
+            ]
+            - adaptive[("graph_hard", rate)][
+                "attacked_target_micro_f1_mean"
+            ]
+        )
+        for rate in (1, 3, 5)
+    }
+    lines.extend([
+        "",
+        "## 结果分析",
+        "",
+        "- `graph_no_filter` 的低预算优势未随预算保持：相对 "
+        f"`graph_hard`，$\\Delta=1,3,5$ 的攻击后 Micro-F1 差异依次为 "
+        f"{_points(no_filter_gains[1])}、{_points(no_filter_gains[3])}、"
+        f"{_points(no_filter_gains[5])}。",
+        "- 高预算下取消第二级硬过滤反而扩大下降，且 HetePRBCD 的最大配对损失超过预注册门槛；证据不支持用 `graph_no_filter` 替换当前实现。",
+        "- 后续敏感性实验固定使用 `graph_hard`；`han_semantic` 继续只作为研究开关，不混入同架构超参数比较。",
+    ])
     lines.extend([
         "",
         "## 版本判定",
@@ -330,7 +352,7 @@ def _score(row):
 
 
 def _score_value(mean, std):
-    return f"{100 * float(mean):.2f}±{100 * float(std):.2f}"
+    return f"{100 * float(mean):.2f} ± {100 * float(std):.2f}"
 
 
 def _percent(value):

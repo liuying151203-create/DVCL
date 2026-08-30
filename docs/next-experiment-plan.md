@@ -13,7 +13,7 @@
 - 阶段 E 已验收：两个可靠性门控候选均未通过，论文模型冻结为 `concat`。
 - 阶段 F1 已验收：AMiner 三种关系范围的 6 个 PRBCD/HetePRBCD artifact 和 12/12 次下游 Pilot 审计通过，但最佳 P–R 范围平均仅下降 0.07 pp，未达到 2 pp 扩展门槛。
 - 阶段 F2 已验收：DBLP 四变体消融完成 140/140 次正式运行，严格审计问题数为 0；Full DVCL 与主协议 35/35 一致，w/o Topology View 结构不变量通过。
-- 阶段 F2.5 已冻结：在进入超参数敏感性前，先用当前强攻击协议审计 `graph_hard` 和 `graph_no_filter` 两种可直接比较的拓扑实现；`han_semantic` 因改变整体拓扑编码架构，不进入本轮正式矩阵。
+- 阶段 F2.5 已验收：12/12 次训练、6/6 次自适应物理搜索和 18/18 个逻辑预算结果通过严格审计；`graph_no_filter` 未通过 poisoning 与自适应门槛，论文实现冻结为 `graph_hard`，结果见 `dvcl-topology-version-pilot.md`。
 
 ## 2. 总体原则
 
@@ -243,6 +243,14 @@ python scripts/analyze_dvcl_view_diagnosis.py
 - `han_semantic` 保留为研究开关，但它同时移除了语义图构建与 topology GAT，不是对 $L_{HAN}$ 的单变量消融，因此不进入当前论文正式矩阵；$\lambda_h$ 的作用统一留到 F3 同架构敏感性实验。
 - 正式运行要求：策略实现、协议和分析器先提交；18 个 manifest 必须来自同一干净提交并通过输入路径、SHA-256、checkpoint 身份和候选池哈希审计。
 
+### 阶段 F2.5 验收结论
+
+- 完整性：12/12 次训练、6/6 次自适应物理搜索和 18/18 个逻辑预算结果全部完成；18 个 manifest 均来自干净提交 `d1b08b3f31b7eb9251846597dc832d6a8fdfd90b`，输入、checkpoint 和候选池审计问题数为 0。
+- `graph_hard` 的 clean 与 HetePRBCD 25% Micro-F1 分别为 89.13 和 83.75；`graph_no_filter` 分别为 88.60 和 82.08。
+- 自适应 $\Delta=5$ 下，`graph_no_filter` 的攻击后 Micro-F1 为 33.33，比 `graph_hard` 的 40.67 低 7.33 pp；其最大配对 HetePRBCD 损失为 3.82 pp，也超过 2 pp 门槛。
+- 冻结 `graph_hard` 进入 F3，不更换论文方法版本；`han_semantic` 不进入同架构敏感性矩阵。
+- 结果见 `docs/dvcl-topology-version-pilot.md`，机器审计见 `outputs/analysis/dvcl_topology_version_pilot_v1/`。
+
 ## 9. 阶段 G：最终冻结
 
 - 重新运行结果汇总和文档生成器。
@@ -261,4 +269,4 @@ python scripts/analyze_dvcl_view_diagnosis.py
 
 ## 10. 开工顺序
 
-阶段 A–E、F1 和 F2 已全部验收。阶段 E 未产生通过门槛的新门控，F1 按门槛取消 AMiner 的 360 次无效扩展，F2 证明 DBLP 中双视图和跨视图对比学习均有正贡献。当前进入 F2.5：先审计历史拓扑实现并冻结论文方法版本，通过阶段汇报后再进入 F3 的 $\lambda_h,\lambda_d,\tau,k,K$ 单因素敏感性实验。
+阶段 A–E、F1、F2 和 F2.5 已全部验收。论文模型保持 `concat + graph_hard`，不主张普遍自适应鲁棒性。当前在 F2.5 阶段边界暂停；确认后进入 F3，先冻结 $\lambda_h,\lambda_d,\tau,k,K$ 的单因素取值、参照值、最强攻击条件和预计运行数，再开始正式敏感性实验。
