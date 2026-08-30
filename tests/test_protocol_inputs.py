@@ -61,3 +61,48 @@ def test_adaptive_formal_protocol_includes_pattern_inputs_and_checkpoints():
         value["kind"] == "checkpoint" and value["train_seed"] in {4, 5}
         for value in requirements
     )
+
+
+def test_variant_protocol_audits_paired_variant_checkpoints_and_attacks(tmp_path):
+    config = {
+        "protocol": "variant_audit",
+        "dataset": "dblp",
+        "model": "dvcl",
+        "variants": [{"name": "graph_hard"}, {"name": "han_semantic"}],
+        "checkpoint_pattern": (
+            "checkpoints/{dataset}/{model_variant}/attack_{attack_seed}/"
+            "train_{train_seed}.pt"
+        ),
+        "attacks": [{
+            "name": "adaptive_query",
+            "variant": "cand_64",
+            "rates": [5],
+            "path_pattern": (
+                "attacks/{dataset}/{model_variant}/attack_{attack_seed}/"
+                "train_{train_seed}.pt"
+            ),
+        }],
+        "seeds": {
+            "split": [1],
+            "pairs": [
+                {"attack": 1, "train": 1},
+                {"attack": 2, "train": 2},
+            ],
+        },
+    }
+    requirements = list(CHECK_INPUTS.protocol_requirements(config, tmp_path))
+    checkpoints = [
+        value for value in requirements if value["kind"] == "checkpoint"
+    ]
+    attacks = [value for value in requirements if value["kind"] == "attack"]
+    assert len(checkpoints) == 4
+    assert len(attacks) == 4
+    assert {
+        (value["model_variant"], value["attack_seed"], value["train_seed"])
+        for value in checkpoints
+    } == {
+        ("graph_hard", 1, 1),
+        ("graph_hard", 2, 2),
+        ("han_semantic", 1, 1),
+        ("han_semantic", 2, 2),
+    }

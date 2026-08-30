@@ -1,0 +1,44 @@
+protocol: dvcl_topology_version_adaptive_pilot_v1
+device: cuda:0
+
+dataset: dblp
+model: dvcl
+backend: native
+model_config_path: configs/models/dvcl.yaml
+split_name_pattern: paper_seed_{seed}
+checkpoint_pattern: outputs/runs/dvcl_topology_version_train_pilot_v1/{dataset}/dvcl/{model_variant}/clean/rate_0/split_seed_{split_seed}/attack_seed_{attack_seed}/train_seed_{train_seed}/checkpoint.pt
+evaluation_budgets: [1, 3, 5]
+
+variants:
+  - name: graph_hard
+    model_config:
+      topology_source: graph
+      semantic_topology_filter: hard
+      lambda_han: 1.0
+  - name: graph_no_filter
+    model_config:
+      topology_source: graph
+      semantic_topology_filter: none
+      lambda_han: 1.0
+attacks:
+  - name: adaptive_query
+    variant: cand_64
+    rates: [5]
+    threat_model: evasion
+    scope: target
+    adaptive: true
+    path_pattern: outputs/attacks/adaptive_requests_v1/cand_64/{dataset}/adaptive_query/rate_{rate}/seed_{attack_seed}/attack.pt
+
+seeds:
+  split: [1]
+  pairs:
+    - attack: 1
+      train: 1
+    - attack: 2
+      train: 2
+    - attack: 3
+      train: 3
+
+training:
+  epochs: 200
+  patience: 100

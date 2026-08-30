@@ -1,0 +1,41 @@
+protocol: dvcl_topology_version_train_pilot_v1
+device: cuda:0
+
+dataset: dblp
+model: dvcl
+backend: native
+model_config_path: configs/models/dvcl.yaml
+split_name_pattern: paper_seed_{seed}
+
+variants:
+  - name: graph_hard
+    model_config:
+      topology_source: graph
+      semantic_topology_filter: hard
+      lambda_han: 1.0
+  - name: graph_no_filter
+    model_config:
+      topology_source: graph
+      semantic_topology_filter: none
+      lambda_han: 1.0
+attacks:
+  - name: clean
+    rates: [0]
+  - name: heteprbcd
+    rates: [25]
+    threat_model: poisoning
+    scope: global
+
+seeds:
+  split: [1]
+  pairs:
+    - attack: 1
+      train: 1
+    - attack: 2
+      train: 2
+    - attack: 3
+      train: 3
+
+training:
+  epochs: 200
+  patience: 100

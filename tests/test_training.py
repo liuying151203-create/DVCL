@@ -3,7 +3,11 @@ import pytest
 torch = pytest.importorskip("torch")
 sp = pytest.importorskip("scipy.sparse")
 
-from dvcl_bench.adapters import _train_supervised, train_dvcl
+from dvcl_bench.adapters import (
+    _train_supervised,
+    _validate_dvcl_strategy,
+    train_dvcl,
+)
 from dvcl_bench.artifacts import AttackArtifact, CleanGraphArtifact, SplitArtifact
 from dvcl_bench.registry import build_model_config
 from dvcl_bench.training import (
@@ -78,11 +82,33 @@ def test_old_dvcl_checkpoint_config_accepts_new_default_fields_only():
         for name, value in config.__dict__.items()
         if name not in {
             "gate_hidden_dim", "route_temperature", "beta_aux", "lambda_route",
-            "structure_augment_rate", "lambda_aug",
+            "structure_augment_rate", "lambda_aug", "topology_source",
+            "semantic_topology_filter",
         }
     }
     assert _checkpoint_config_matches(old, config)
     assert not _checkpoint_config_matches(old, DVCLTrainConfig(lambda_route=0.5))
+
+
+def test_han_semantic_strategy_requires_compatible_full_checkpoint():
+    _validate_dvcl_strategy(DVCLTrainConfig(topology_source="han_semantic"))
+    with pytest.raises(ValueError, match="dimension mismatch"):
+        _validate_dvcl_strategy(DVCLTrainConfig(
+            topology_source="han_semantic", semantic_hidden_dim=32
+        ))
+    with pytest.raises(ValueError, match="full semantic and DVCL checkpoint"):
+        _validate_dvcl_strategy(DVCLTrainConfig(
+            topology_source="han_semantic", legacy_checkpoint_semantics=True
+        ))
+
+
+def test_dvcl_strategy_rejects_unknown_topology_switches():
+    with pytest.raises(ValueError, match="Unsupported DVCL topology source"):
+        _validate_dvcl_strategy(DVCLTrainConfig(topology_source="unknown"))
+    with pytest.raises(ValueError, match="Unsupported semantic topology filter"):
+        _validate_dvcl_strategy(DVCLTrainConfig(
+            semantic_topology_filter="soft"
+        ))
 
 
 def test_feature_only_training_is_invariant_to_structural_attack(tmp_path):

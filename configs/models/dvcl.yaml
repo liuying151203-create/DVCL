@@ -7,6 +7,8 @@ config:
   knn_mode: directed
   view_mode: both
   fusion_mode: concat
+  topology_source: graph
+  semantic_topology_filter: hard
   temperature: 0.5
   lambda_han: 1.0
   lambda_dvcl: 1.0

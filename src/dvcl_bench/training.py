@@ -53,6 +53,8 @@ class DVCLTrainConfig:
     knn_mode: str = "directed"
     view_mode: str = "both"
     fusion_mode: str = "concat"
+    topology_source: str = "graph"
+    semantic_topology_filter: str = "hard"
     gate_hidden_dim: int = 16
     route_temperature: float = 1.0
     temperature: float = 0.5

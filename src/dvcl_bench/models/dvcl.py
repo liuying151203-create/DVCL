@@ -79,6 +79,20 @@ class DualViewContrastiveDefense(nn.Module):
             feature = self.feature_encoder(masked, feature_graph)
         return self.classify(topology, feature)
 
+    def forward_with_topology_embedding(
+        self, features, topology_embedding, feature_graph
+    ):
+        topology = None
+        feature = None
+        if self.view_mode in {"both", "both_nocl", "topo"}:
+            topology = topology_embedding
+        if self.view_mode in {"both", "both_nocl", "feat"}:
+            masked = F.dropout(
+                features, p=self.feature_mask_rate, training=self.training
+            )
+            feature = self.feature_encoder(masked, feature_graph)
+        return self.classify(topology, feature)
+
     def classify(self, topology, feature):
         self.last_gate_weight = None
         self.last_gate_signals = None

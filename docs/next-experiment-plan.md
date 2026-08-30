@@ -12,6 +12,8 @@
 - 阶段 D 已验收：15/15 个 clean checkpoint、60/60 次物理攻击评估和 90/90 个逻辑结果全部完成，强化审计问题数为 0；结果见 `dvcl-view-diagnosis-results.md`。
 - 阶段 E 已验收：两个可靠性门控候选均未通过，论文模型冻结为 `concat`。
 - 阶段 F1 已验收：AMiner 三种关系范围的 6 个 PRBCD/HetePRBCD artifact 和 12/12 次下游 Pilot 审计通过，但最佳 P–R 范围平均仅下降 0.07 pp，未达到 2 pp 扩展门槛。
+- 阶段 F2 已验收：DBLP 四变体消融完成 140/140 次正式运行，严格审计问题数为 0；Full DVCL 与主协议 35/35 一致，w/o Topology View 结构不变量通过。
+- 阶段 F2.5 已冻结：在进入超参数敏感性前，先用当前强攻击协议审计 `graph_hard` 和 `graph_no_filter` 两种可直接比较的拓扑实现；`han_semantic` 因改变整体拓扑编码架构，不进入本轮正式矩阵。
 
 ## 2. 总体原则
 
@@ -199,9 +201,10 @@ python scripts/analyze_dvcl_view_diagnosis.py
 
 1. **F1 攻击可信度**：先补 AMiner PRBCD/HetePRBCD attack seed 2–3，关系类型按 P–A、P–R、联合攻击分别审计；若 surrogate 诊断仍显示攻击弱，先修攻击，不进入模型比较。
 2. **F2 消融泛化**：将统一 `w/o` 组件消融扩展到 DBLP；AMiner 仅在主结论依赖该数据集时补充，避免无效全矩阵。
-3. **F3 超参数敏感性**：围绕最终模型对 $\lambda_h,\lambda_d,\tau,k,K$ 做单因素实验，每次只改变一个参数；至少覆盖 clean 和一个最强攻击条件。
-4. **F4 效率与资源**：报告参数量、训练时间、推理时间、攻击查询成本和峰值显存；时间使用相同硬件并预热后重复测量。
-5. **F5 统计与图表**：对论文中的关键成对主张执行置信区间、Wilcoxon 和 Holm 校正，生成下降幅度、平均排名、攻击曲线和视图诊断图。
+3. **F2.5 方法版本审计**：在 DBLP 上比较当前 `graph_hard` 与保留全部语义候选边的 `graph_no_filter`，再冻结进入论文的 DVCL 方法版本。
+4. **F3 超参数敏感性**：围绕最终模型对 $\lambda_h,\lambda_d,\tau,k,K$ 做单因素实验，每次只改变一个参数；至少覆盖 clean 和一个最强攻击条件。
+5. **F4 效率与资源**：报告参数量、训练时间、推理时间、攻击查询成本和峰值显存；时间使用相同硬件并预热后重复测量。
+6. **F5 统计与图表**：对论文中的关键成对主张执行置信区间、Wilcoxon 和 Holm 校正，生成下降幅度、平均排名、攻击曲线和视图诊断图。
 
 每个子阶段均先冻结协议和预期运行数，再执行输入审计、正式运行和完整性审计。F1–F5 不并行改变模型定义；阶段 E 一旦冻结，后续只补证据，不继续调参追逐测试结果。
 
@@ -222,6 +225,24 @@ python scripts/analyze_dvcl_view_diagnosis.py
 - 按预注册规则停止 attack seed 2–3 和 360 次正式扩展；AMiner 现有 poisoning 结果保留为描述性证据，不用于宣称 DVCL 具备强 poisoning 鲁棒性。
 - 结果见 `docs/aminer-poisoning-relation-pilot.md`，机器审计见 `outputs/analysis/aminer_poisoning_relation_pilot_v1/`。
 
+### 阶段 F2 验收结论
+
+- 四个统一 `w/o` 变体在 clean、PRBCD/HetePRBCD 的 $r=5\%,15\%,25\%$ 下完成 140/140 次正式运行；失败、缺失、dirty manifest 和输入哈希问题均为 0。
+- 全部 manifest 来自干净提交 `4434ecf77fb19f3d8039e9732ba1593eafb5828e`；Full DVCL 与 `dblp_poisoning_main_v1` 的 35 个条件逐项严格一致。
+- Full DVCL 的 Attack Average 为 84.56；移除跨视图对比学习、特征视图和拓扑视图后分别下降 1.42、5.54、4.77 pp。
+- w/o Feature View 在 HetePRBCD 下平均下降 10.88 pp，说明特征视图是 DBLP 拓扑攻击下的主要缓冲来源；w/o Topology View 在所有结构攻击下逐种子严格不变。
+- 结果见 `docs/dblp-ablation-results.md`，机器审计见 `outputs/analysis/dblp_poisoning_ablation_v1/`。
+
+### 阶段 F2.5 预注册协议
+
+- 数据集：DBLP；变体为 `graph_hard`（当前论文基准，硬语义阈值，$\lambda_h=1$）和 `graph_no_filter`（不执行第二级硬阈值，$\lambda_h=1$）。
+- 训练条件：clean 与 HetePRBCD $r=25\%$；自适应条件：每目标 64+64 候选、$\Delta=\{1,3,5\}$；配对重复为 $(s_a,s_t)=(1,1),(2,2),(3,3)$。
+- 规模：12 次训练和 6 次自适应物理搜索；自适应搜索沿同一轨迹产生 18 个逻辑预算结果。
+- 公平性：两个变体使用相同 split、配对 seed、poisoning artifact、目标节点和候选池；每个变体的自适应攻击针对自身 clean checkpoint 独立优化。
+- 决策门槛：候选相对 `graph_hard` 的三种子最大 clean 损失不超过 1.5 pp、HetePRBCD 攻击后损失不超过 2 pp，且 DBLP 自适应 $\Delta=5$ 攻击后 Micro-F1 至少提升 5 pp；否则保留 `graph_hard`。
+- `han_semantic` 保留为研究开关，但它同时移除了语义图构建与 topology GAT，不是对 $L_{HAN}$ 的单变量消融，因此不进入当前论文正式矩阵；$\lambda_h$ 的作用统一留到 F3 同架构敏感性实验。
+- 正式运行要求：策略实现、协议和分析器先提交；18 个 manifest 必须来自同一干净提交并通过输入路径、SHA-256、checkpoint 身份和候选池哈希审计。
+
 ## 9. 阶段 G：最终冻结
 
 - 重新运行结果汇总和文档生成器。
@@ -240,4 +261,4 @@ python scripts/analyze_dvcl_view_diagnosis.py
 
 ## 10. 开工顺序
 
-阶段 A–E 和 F1 已全部验收。阶段 E 未产生通过门槛的新模型，已冻结 `concat` 为后续论文主模型；F1 证明当前 AMiner poisoning 的主要限制是跨模型迁移弱，并按门槛取消 360 次无效扩展。当前暂停在阶段边界，下一步经用户确认后进入 F2，将统一 `w/o` 组件消融扩展到 DBLP。
+阶段 A–E、F1 和 F2 已全部验收。阶段 E 未产生通过门槛的新门控，F1 按门槛取消 AMiner 的 360 次无效扩展，F2 证明 DBLP 中双视图和跨视图对比学习均有正贡献。当前进入 F2.5：先审计历史拓扑实现并冻结论文方法版本，通过阶段汇报后再进入 F3 的 $\lambda_h,\lambda_d,\tau,k,K$ 单因素敏感性实验。

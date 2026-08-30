@@ -39,11 +39,12 @@ def protocol_requirements(config, root=ROOT):
         raise ValueError("Protocol config must define dataset or datasets")
     seeds = config.get("seeds", {})
     split_seeds = seeds.get("split", [config.get("split_seed", 1)])
-    attack_seeds = _seed_values(
-        seeds, "attack", [config.get("attack_seed", 1)]
+    seed_pairs = _seed_pairs(
+        seeds,
+        [config.get("attack_seed", 1)],
+        config.get("train_seeds", [1]),
     )
-    train_seeds = _seed_values(seeds, "train", [1])
-    models = config.get("models") or [{"name": config.get("model", "")}]
+    model_dimensions = _model_dimensions(config)
     split_pattern = config.get("split_name_pattern")
     seen = set()
     for dataset in datasets:
@@ -71,15 +72,16 @@ def protocol_requirements(config, root=ROOT):
                 }
             checkpoint_pattern = config.get("checkpoint_pattern")
             if checkpoint_pattern:
-                for model in models:
-                    model_name = model["name"]
-                    for train_seed in train_seeds:
+                for model_name, model_variant in model_dimensions:
+                    for attack_seed, train_seed in seed_pairs:
                         checkpoint_path = _pattern_path(
                             root,
                             checkpoint_pattern,
                             dataset=dataset,
                             model=model_name,
+                            model_variant=model_variant,
                             split_seed=split_seed,
+                            attack_seed=attack_seed,
                             train_seed=train_seed,
                         )
                         checkpoint_key = ("checkpoint", str(checkpoint_path))
@@ -90,69 +92,88 @@ def protocol_requirements(config, root=ROOT):
                             "kind": "checkpoint",
                             "dataset": dataset,
                             "model": model_name,
+                            "model_variant": model_variant,
                             "split_seed": int(split_seed),
+                            "attack_seed": int(attack_seed),
                             "train_seed": int(train_seed),
                             "path": checkpoint_path,
                         }
             for attack in config.get("attacks", []):
                 if attack["name"] == "clean":
                     continue
-                for attack_seed in attack_seeds:
+                for attack_seed, train_seed in seed_pairs:
                     for rate in attack.get("rates", []):
-                        for model in models:
-                            model_name = model["name"]
-                            for train_seed in train_seeds:
-                                if attack.get("path_pattern"):
-                                    attack_path = _pattern_path(
-                                        root,
-                                        attack["path_pattern"],
-                                        dataset=dataset,
-                                        model=model_name,
-                                        attack=attack["name"],
-                                        variant=attack.get("variant", "default"),
-                                        rate=f"{rate:g}",
-                                        seed=attack_seed,
-                                        split_seed=split_seed,
-                                        attack_seed=attack_seed,
-                                        train_seed=train_seed,
-                                    )
-                                else:
-                                    attack_path = layout.attack_path(
-                                        dataset, attack["name"], rate,
-                                        int(attack_seed),
-                                    )
-                                attack_key = (
-                                    "attack", str(attack_path), str(split_path)
+                        for model_name, model_variant in model_dimensions:
+                            if attack.get("path_pattern"):
+                                attack_path = _pattern_path(
+                                    root,
+                                    attack["path_pattern"],
+                                    dataset=dataset,
+                                    model=model_name,
+                                    attack=attack["name"],
+                                    variant=attack.get("variant", "default"),
+                                    model_variant=model_variant,
+                                    rate=f"{rate:g}",
+                                    seed=attack_seed,
+                                    split_seed=split_seed,
+                                    attack_seed=attack_seed,
+                                    train_seed=train_seed,
                                 )
-                                if attack_key in seen:
-                                    continue
-                                seen.add(attack_key)
-                                yield {
-                                    "kind": "attack",
-                                    "dataset": dataset,
-                                    "attack": attack["name"],
-                                    "rate": float(rate),
-                                    "attack_seed": int(attack_seed),
-                                    "path": attack_path,
-                                    "clean_path": clean_path,
-                                    "split_path": split_path,
-                                }
+                            else:
+                                attack_path = layout.attack_path(
+                                    dataset, attack["name"], rate,
+                                    int(attack_seed),
+                                )
+                            attack_key = (
+                                "attack", str(attack_path), str(split_path)
+                            )
+                            if attack_key in seen:
+                                continue
+                            seen.add(attack_key)
+                            yield {
+                                "kind": "attack",
+                                "dataset": dataset,
+                                "attack": attack["name"],
+                                "rate": float(rate),
+                                "attack_seed": int(attack_seed),
+                                "train_seed": int(train_seed),
+                                "model": model_name,
+                                "model_variant": model_variant,
+                                "path": attack_path,
+                                "clean_path": clean_path,
+                                "split_path": split_path,
+                            }
 
 
-def _seed_values(seeds, name, default):
+def _seed_pairs(seeds, default_attack, default_train):
     pairs = seeds.get("pairs")
     if pairs is None:
-        return seeds.get(name, default)
+        return [
+            (int(attack_seed), int(train_seed))
+            for attack_seed in seeds.get("attack", default_attack)
+            for train_seed in seeds.get("train", default_train)
+        ]
     values = []
     for index, pair in enumerate(pairs):
         if not isinstance(pair, dict) or "attack" not in pair or "train" not in pair:
             raise ValueError(
                 f"seeds.pairs[{index}] must define integer attack and train seeds"
             )
-        value = int(pair[name])
+        value = (int(pair["attack"]), int(pair["train"]))
         if value not in values:
             values.append(value)
     return values
+
+
+def _model_dimensions(config):
+    if "variants" in config:
+        model_name = config.get("model", "")
+        return [
+            (model_name, variant["name"])
+            for variant in config["variants"]
+        ]
+    models = config.get("models") or [{"name": config.get("model", "")}]
+    return [(model["name"], "default") for model in models]
 
 
 def _pattern_path(root: Path, pattern: str, **values):

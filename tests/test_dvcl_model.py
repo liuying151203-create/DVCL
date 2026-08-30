@@ -10,6 +10,7 @@ from dvcl_bench.models.dvcl import (
     perturb_topology_graph,
     reliability_signals,
 )
+from dvcl_bench.models.semantic import SemanticHAN
 
 
 def test_dvcl_forward_and_ablation_modes():
@@ -28,6 +29,23 @@ def test_directed_knn_has_exact_out_degree():
     features = torch.eye(5)
     graph = build_feature_knn_graph(features, 2, "directed")
     assert graph.num_edges() == 10
+
+
+def test_han_semantic_topology_receives_fused_classification_gradients():
+    features = torch.randn(6, 4)
+    graph = build_feature_knn_graph(features, 2)
+    semantic = SemanticHAN(1, 4, 3, 2, 2, 0.0)
+    model = DualViewContrastiveDefense(
+        4, 3, 2, 2, 0.0, view_mode="both", fusion_mode="concat"
+    )
+    topology = semantic.encode(features, [graph])
+    logits, _, _ = model.forward_with_topology_embedding(
+        features, topology, graph
+    )
+    torch.nn.functional.cross_entropy(
+        logits, torch.tensor([0, 1, 0, 1, 0, 1])
+    ).backward()
+    assert semantic.layer.gat_layers[0].fc.weight.grad is not None
 
 
 @pytest.mark.parametrize(
