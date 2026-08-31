@@ -13,10 +13,11 @@
 | 组件消融 | ACM、DBLP | DVCL 四个 variant | $s_{train}=1\ldots5$ | 模块贡献 |
 | 拓扑实现版本审计 | DBLP | DVCL 两个 topology variant | $(s_a,s_t)=(1,1),(2,2),(3,3)$ | 冻结论文方法版本 |
 | 超参数敏感性 | DBLP | DVCL 最终版本 | $(s_a,s_t)=(1,1),(2,2),(3,3)$ | 单因素局部稳定性 |
+| 效率与资源 | ACM、DBLP、AMiner | 统一 11 模型 | $s_{train}=1,2,3$ | 参数量、时间、延迟、显存与查询成本 |
 
 统一训练设置为 $E_{max}=200$、$P=100$ 和完整模型 checkpoint。Poisoning 扰动率为 $r\in\{5,10,15,20,25\}\%$；目标逃逸预算为 $\Delta\in\{1,3,5\}$。表格报告均值 ± 样本标准差。
 
-完整性检查覆盖 17 套协议、4402/4402 次运行，所有主表单元及方法版本审计均通过覆盖与输入哈希校验。
+完整性检查覆盖 18 套协议、4501/4501 次运行，所有主表单元及方法版本审计均通过覆盖与输入哈希校验。
 
 ## 2. 三数据集统一十一模型全局 Poisoning
 
@@ -291,9 +292,39 @@ ACM 和 AMiner 中 DVCL 在当前 64+64 有限候选攻击下未出现目标 Mic
 
 五个参数均通过预注册的 2 pp 局部稳定门槛。该结论描述冻结参数邻域内的稳定性，不将本轮最佳观测值作为重新调参依据。
 
-## 6. 异常结果审计与结论边界
+## 6. 效率与资源
 
-### 6.1 AMiner Poisoning 强度
+全部测量在单张独占 Tesla V100 上串行完成。训练时间包含模型内部预处理、优化、早停、最佳模型恢复与测试；推理在静态预处理完成后预热 10 次并同步测量完整图前向 50 次。Micro-F1 是本轮三种子伴随结果，不替代五种子准确率主表。下表突出 HSeCo 与 DVCL，统一 11 模型明细见 `docs/model-efficiency-results.md`。
+
+| Dataset | Model | Params (M) | Train (s) | s/iter | Inference (ms) | Peak GPU (MiB) | Micro-F1 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| ACM | HSeCo | 3.974 | 14.27 ± 0.39 | 0.1245 ± 0.0005 | 2.689 ± 0.007 | 902.3 ± 0.6 | 87.59 ± 0.52 |
+| ACM | DVCL | 3.974 | 9.32 ± 1.54 | 0.0702 ± 0.0011 | 4.566 ± 0.395 | 630.1 ± 0.2 | 88.40 ± 0.78 |
+| DBLP | HSeCo | 0.935 | 28.82 ± 6.59 | 0.1658 ± 0.0046 | 2.707 ± 0.022 | 1140.6 ± 0.9 | 89.25 ± 0.27 |
+| DBLP | DVCL | 0.935 | 14.62 ± 3.59 | 0.0851 ± 0.0084 | 4.103 ± 0.886 | 1155.2 ± 0.1 | 89.13 ± 0.31 |
+| AMINER | HSeCo | 13.521 | 20.35 ± 0.18 | 0.1884 ± 0.0007 | 9.046 ± 0.360 | 2632.9 ± 0.0 | 85.53 ± 0.56 |
+| AMINER | DVCL | 13.521 | 9.24 ± 0.97 | 0.0848 ± 0.0089 | 12.007 ± 0.974 | 1531.0 ± 0.0 | 87.68 ± 0.16 |
+
+自适应攻击查询成本仅描述攻击侧计算量。$\Delta=5$ 时，每目标平均 victim-model 查询次数如下；查询更少不代表模型更鲁棒。
+
+| Dataset | HSeCo | DVCL |
+|---|---:|---:|
+| ACM | 75.9 ± 18.0 | 82.1 ± 22.3 |
+| DBLP | 99.5 ± 6.4 | 109.6 ± 4.3 |
+| AMINER | 75.2 ± 2.9 | 84.9 ± 5.1 |
+
+| $K$ | State parameters (M) | Relative to $K=4$ |
+|---:|---:|---:|
+| 1 | 0.673 | 0.72× |
+| 2 | 0.760 | 0.81× |
+| 4 | 0.935 | 1.00× |
+| 8 | 1.284 | 1.37× |
+
+DVCL 与 HSeCo 在三个数据集上的参数量逐项相同。DVCL 完整训练分别快 1.53×、1.97×、2.20×，但完整图推理延迟分别为 HSeCo 的 1.70×、1.52×、1.33×。因此证据支持“训练更快”，不支持“训练与推理全面更高效”。$K=8$ 的容量为 $K=4$ 的 1.37×，F3 多头曲线同时包含容量变化。
+
+## 7. 异常结果审计与结论边界
+
+### 7.1 AMiner Poisoning 强度
 
 | Attack | Relations | Realized $r$ | Train change share | Surrogate drop (pp) | Formal median drop (pp) |
 |---|---|---:|---:|---:|---:|
@@ -302,7 +333,7 @@ ACM 和 AMiner 中 DVCL 在当前 64+64 有限候选攻击下未出现目标 Mic
 
 AMiner 的预算与 artifact 验证均正确，但替代模型和正式模型下降偏弱；这属于当前攻击生成器效果不足，不是漏施加预算。因此 AMiner poisoning 只能支持弱攻击条件下的横向比较。
 
-### 6.2 可支持与不可支持的结论
+### 7.2 可支持与不可支持的结论
 
 1. 三数据集主表可以比较统一 11 模型在相同数据集、相同 artifact 下的 Micro-F1。
 2. 多攻击种子复验支持 DVCL 相对 HSeCo 的 ACM/DBLP 总体增益，但不支持 DVCL 在每个数据集、每种攻击上普遍最优。
@@ -312,8 +343,9 @@ AMiner 的预算与 artifact 验证均正确，但替代模型和正式模型下
 6. ACM/DBLP 消融均支持双视图和跨视图对比学习的正贡献；DBLP 中移除特征视图后 HetePRBCD 平均下降 10.88 pp，说明特征视图主要缓冲拓扑攻击。
 7. 拓扑实现版本审计不支持取消第二级语义硬过滤；F3 超参数敏感性固定使用 `graph_hard`，避免继续混用历史拓扑实现。
 8. F3 的五个预注册参数均通过 2 pp 局部稳定门槛；该结果只覆盖 DBLP clean 与 HetePRBCD 15%，不用于替换冻结参数或外推自适应鲁棒性。
+9. F4 显示 DVCL 相对 HSeCo 训练更快但完整图推理更慢；效率结论必须按训练、推理和显存分别陈述，不能概括为全面更高效。
 
-## 7. 论文图表
+## 8. 论文图表
 
 ![ACM HetePRBCD 多种子曲线](figures/paper/acm_heteprbcd_curve.png)
 
@@ -325,13 +357,14 @@ AMiner 的预算与 artifact 验证均正确，但替代模型和正式模型下
 
 ![DVCL 超参数敏感性](figures/paper/dvcl_hyperparameter_sensitivity.png)
 
-## 8. 专项附录
+## 9. 专项附录
 
 - 完整扰动率与数据集明细：`docs/acm-experiment-results.md`、`docs/dblp-experiment-results.md`、`docs/aminer-experiment-results.md`
 - 目标逃逸逐模型结果：`docs/target-evasion-results.md`
 - DBLP 消融配对贡献与严格审计：`docs/dblp-ablation-results.md`
 - DVCL 拓扑实现版本审计：`docs/dvcl-topology-version-pilot.md`
 - DVCL 超参数敏感性：`docs/dvcl-hyperparameter-sensitivity.md`
+- 统一十一模型效率与资源：`docs/model-efficiency-results.md`
 - 鲁棒/OpenHGNN/RND 基线：`docs/robust-baseline-results.md`、`docs/openhgnn-baseline-results.md`、`docs/rnd-attack-results.md`
 - 文档导航与口径优先级：`docs/README.md`
 - 当前有效后续实验计划：`docs/next-experiment-plan.md`

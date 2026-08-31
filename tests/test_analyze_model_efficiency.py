@@ -1,3 +1,6 @@
+import json
+from dataclasses import asdict
+
 from scripts import analyze_model_efficiency as ANALYZER
 from scripts import audit_efficiency_hardware as HARDWARE
 from scripts import run_suite
@@ -81,6 +84,8 @@ def test_report_uses_micro_f1_and_query_counts_only():
     assert "Micro-F1" in report
     assert "Macro" not in report
     assert "查询次数" in report
+    assert "## 结果分析" in report
+    assert "不能表述为全面更高效" in report
 
 
 def test_suite_commands_embed_manifested_profile_spec():
@@ -90,6 +95,22 @@ def test_suite_commands_embed_manifested_profile_spec():
     assert spec.profiling.enabled
     assert spec.profiling.inference_warmup == 10
     assert spec.profiling.inference_repetitions == 50
+
+
+def test_hardware_device_overrides_protocol_default_for_manifest_audit():
+    config = ANALYZER.load_efficiency_config(ANALYZER.CONFIG, "cuda:4")
+    command = next(run_suite.commands(config, "python", ANALYZER.ROOT))
+    spec = ANALYZER._spec_from_command(command)
+    assert spec.device == "cuda:4"
+
+
+def test_manifest_spec_is_compared_after_json_normalization():
+    config = ANALYZER.load_efficiency_config(ANALYZER.CONFIG, "cuda:4")
+    command = next(run_suite.commands(config, "python", ANALYZER.ROOT))
+    spec = ANALYZER._spec_from_command(command)
+    persisted = json.loads(json.dumps(asdict(spec)))
+    assert persisted["extra_args"] == []
+    assert persisted != asdict(spec)
 
 
 def test_hardware_device_parser_rejects_non_cuda_values():

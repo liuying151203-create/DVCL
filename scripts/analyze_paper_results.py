@@ -62,6 +62,9 @@ TOPOLOGY_VERSION_ANALYSIS = (
 SENSITIVITY_ANALYSIS = (
     ROOT / "outputs" / "analysis" / "dvcl_hyperparameter_sensitivity_v1"
 )
+EFFICIENCY_ANALYSIS = (
+    ROOT / "outputs" / "analysis" / "model_efficiency_v1"
+)
 EXPECTED_PROTOCOL_RUNS = {
     "acm_poisoning_main_v1": 220,
     "dblp_poisoning_main_v1": 220,
@@ -80,6 +83,7 @@ EXPECTED_PROTOCOL_RUNS = {
     "dvcl_topology_version_train_pilot_v1": 12,
     "dvcl_topology_version_adaptive_pilot_v1": 6,
     "dvcl_hyperparameter_sensitivity_v1": 120,
+    "model_efficiency_v1": 99,
 }
 MODEL_ORDER = (
     "han", "heterosage", "rohe", "heteroguard", "fastrohgcn", "hgt",
@@ -147,6 +151,7 @@ def main() -> int:
     ablation = _ablation_rows(rows)
     topology_version = _topology_version_results(TOPOLOGY_VERSION_ANALYSIS)
     sensitivity = _hyperparameter_sensitivity_results(SENSITIVITY_ANALYSIS)
+    efficiency = _model_efficiency_results(EFFICIENCY_ANALYSIS)
     adaptive_budget = _adaptive_budget_rows(run_root)
     adaptive_rows, adaptive_issues, adaptive_expected, adaptive_completed = (
         collect_adaptive_rows(ADAPTIVE_CONFIG)
@@ -191,6 +196,7 @@ def main() -> int:
             "adaptive_logical_results": len(adaptive_rows),
             "topology_version_audit": topology_version["audit"],
             "hyperparameter_sensitivity_audit": sensitivity["audit"],
+            "model_efficiency_audit": efficiency["audit"],
             "significance_test": "paired two-sided Wilcoxon signed-rank",
             "multiple_testing": "Holm family-wise correction",
             "adaptive_effect_ci": "paired mean Student-t 95% confidence interval",
@@ -204,7 +210,7 @@ def main() -> int:
             benchmark_summary, benchmark_family, multi_family, significance,
             ranks, targets, ablation, adaptive_summary, adaptive_significance,
             adaptive_ranks, aminer_audit, topology_version, protocol_counts,
-            sensitivity,
+            sensitivity, efficiency,
         ),
         encoding="utf-8",
     )
@@ -570,6 +576,66 @@ def _hyperparameter_sensitivity_results(output_root):
     return {"summary": summary, "stability": stability, "audit": audit}
 
 
+def _model_efficiency_results(output_root):
+    audit_path = output_root / "audit.json"
+    summary_path = output_root / "model_efficiency_summary.csv"
+    query_path = output_root / "adaptive_query_cost.csv"
+    capacity_path = output_root / "dvcl_head_capacity.csv"
+    required = (audit_path, summary_path, query_path, capacity_path)
+    missing = [str(path) for path in required if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(
+            "Missing model-efficiency analysis files: " + ", ".join(missing)
+        )
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    if (
+        not audit.get("ok")
+        or audit.get("expected") != 99
+        or audit.get("completed") != 99
+        or audit.get("issues")
+    ):
+        raise ValueError("Model-efficiency audit did not pass")
+    summary = _read_numeric_csv(summary_path, (
+        "n", "trainable_parameters", "parameter_millions",
+        "micro_f1_mean", "micro_f1_std", "training_seconds_mean",
+        "training_seconds_std", "seconds_per_iteration_mean",
+        "seconds_per_iteration_std", "inference_latency_ms_mean_mean",
+        "inference_latency_ms_mean_std", "peak_allocated_mib_mean",
+        "peak_allocated_mib_std",
+    ))
+    queries = _read_numeric_csv(query_path, (
+        "rate", "queries_per_target_mean", "queries_per_target_std",
+    ))
+    capacity = _read_numeric_csv(capacity_path, (
+        "heads", "state_elements", "state_bytes", "relative_to_k4",
+    ))
+    expected_pairs = {
+        (dataset, model)
+        for dataset in ("acm", "dblp", "aminer")
+        for model in MODEL_ORDER
+    }
+    if (
+        len(summary) != 33
+        or {(row["dataset"], row["model"]) for row in summary}
+        != expected_pairs
+        or any(row["n"] != 3 for row in summary)
+        or len(queries) != 99
+        or len(capacity) != 4
+        or {int(row["heads"]) for row in capacity} != {1, 2, 4, 8}
+    ):
+        raise ValueError("Incomplete model-efficiency summaries")
+    dblp_dvcl = _lookup(summary, dataset="dblp", model="dvcl")
+    k4 = next(row for row in capacity if int(row["heads"]) == 4)
+    if int(k4["state_elements"]) != int(dblp_dvcl["trainable_parameters"]):
+        raise ValueError("DVCL K=4 capacity does not match F4 parameters")
+    return {
+        "summary": summary,
+        "queries": queries,
+        "capacity": capacity,
+        "audit": audit,
+    }
+
+
 def _read_numeric_csv(path, numeric_fields):
     with path.open(newline="", encoding="utf-8-sig") as stream:
         rows = list(csv.DictReader(stream))
@@ -593,7 +659,7 @@ def _score(row):
 def _final_document(
     benchmark, benchmark_family, multi_family, significance, ranks, targets,
     ablation, adaptive, adaptive_significance, adaptive_ranks, aminer_audit,
-    topology_version, protocol_counts, sensitivity,
+    topology_version, protocol_counts, sensitivity, efficiency,
 ):
     completed = sum(row["completed"] for row in protocol_counts)
     lines = [
@@ -612,6 +678,7 @@ def _final_document(
         "| 组件消融 | ACM、DBLP | DVCL 四个 variant | $s_{train}=1\\ldots5$ | 模块贡献 |",
         "| 拓扑实现版本审计 | DBLP | DVCL 两个 topology variant | $(s_a,s_t)=(1,1),(2,2),(3,3)$ | 冻结论文方法版本 |",
         "| 超参数敏感性 | DBLP | DVCL 最终版本 | $(s_a,s_t)=(1,1),(2,2),(3,3)$ | 单因素局部稳定性 |",
+        "| 效率与资源 | ACM、DBLP、AMiner | 统一 11 模型 | $s_{train}=1,2,3$ | 参数量、时间、延迟、显存与查询成本 |",
         "",
         "统一训练设置为 $E_{max}=200$、$P=100$ 和完整模型 checkpoint。Poisoning 扰动率为 $r\\in\\{5,10,15,20,25\\}\\%$；目标逃逸预算为 $\\Delta\\in\\{1,3,5\\}$。表格报告均值 ± 样本标准差。",
         "",
@@ -714,10 +781,11 @@ def _final_document(
         lines.append("")
     lines.extend(_topology_version_lines(topology_version))
     lines.extend(_hyperparameter_sensitivity_lines(sensitivity))
+    lines.extend(_model_efficiency_lines(efficiency))
     lines.extend([
-        "## 6. 异常结果审计与结论边界",
+        "## 7. 异常结果审计与结论边界",
         "",
-        "### 6.1 AMiner Poisoning 强度",
+        "### 7.1 AMiner Poisoning 强度",
         "",
         "| Attack | Relations | Realized $r$ | Train change share | Surrogate drop (pp) | Formal median drop (pp) |",
         "|---|---|---:|---:|---:|---:|",
@@ -734,7 +802,7 @@ def _final_document(
         "",
         "AMiner 的预算与 artifact 验证均正确，但替代模型和正式模型下降偏弱；这属于当前攻击生成器效果不足，不是漏施加预算。因此 AMiner poisoning 只能支持弱攻击条件下的横向比较。",
         "",
-        "### 6.2 可支持与不可支持的结论",
+        "### 7.2 可支持与不可支持的结论",
         "",
         "1. 三数据集主表可以比较统一 11 模型在相同数据集、相同 artifact 下的 Micro-F1。",
         "2. 多攻击种子复验支持 DVCL 相对 HSeCo 的 ACM/DBLP 总体增益，但不支持 DVCL 在每个数据集、每种攻击上普遍最优。",
@@ -744,8 +812,9 @@ def _final_document(
         "6. ACM/DBLP 消融均支持双视图和跨视图对比学习的正贡献；DBLP 中移除特征视图后 HetePRBCD 平均下降 10.88 pp，说明特征视图主要缓冲拓扑攻击。",
         "7. 拓扑实现版本审计不支持取消第二级语义硬过滤；F3 超参数敏感性固定使用 `graph_hard`，避免继续混用历史拓扑实现。",
         "8. F3 的五个预注册参数均通过 2 pp 局部稳定门槛；该结果只覆盖 DBLP clean 与 HetePRBCD 15%，不用于替换冻结参数或外推自适应鲁棒性。",
+        "9. F4 显示 DVCL 相对 HSeCo 训练更快但完整图推理更慢；效率结论必须按训练、推理和显存分别陈述，不能概括为全面更高效。",
         "",
-        "## 7. 论文图表",
+        "## 8. 论文图表",
         "",
         "![ACM HetePRBCD 多种子曲线](figures/paper/acm_heteprbcd_curve.png)",
         "",
@@ -757,13 +826,14 @@ def _final_document(
         "",
         "![DVCL 超参数敏感性](figures/paper/dvcl_hyperparameter_sensitivity.png)",
         "",
-        "## 8. 专项附录",
+        "## 9. 专项附录",
         "",
         "- 完整扰动率与数据集明细：`docs/acm-experiment-results.md`、`docs/dblp-experiment-results.md`、`docs/aminer-experiment-results.md`",
         "- 目标逃逸逐模型结果：`docs/target-evasion-results.md`",
         "- DBLP 消融配对贡献与严格审计：`docs/dblp-ablation-results.md`",
         "- DVCL 拓扑实现版本审计：`docs/dvcl-topology-version-pilot.md`",
         "- DVCL 超参数敏感性：`docs/dvcl-hyperparameter-sensitivity.md`",
+        "- 统一十一模型效率与资源：`docs/model-efficiency-results.md`",
         "- 鲁棒/OpenHGNN/RND 基线：`docs/robust-baseline-results.md`、`docs/openhgnn-baseline-results.md`、`docs/rnd-attack-results.md`",
         "- 文档导航与口径优先级：`docs/README.md`",
         "- 当前有效后续实验计划：`docs/next-experiment-plan.md`",
@@ -868,6 +938,89 @@ def _hyperparameter_sensitivity_lines(result):
     lines.extend([
         "",
         "五个参数均通过预注册的 2 pp 局部稳定门槛。该结论描述冻结参数邻域内的稳定性，不将本轮最佳观测值作为重新调参依据。",
+        "",
+    ])
+    return lines
+
+
+def _model_efficiency_lines(result):
+    summary = {
+        (row["dataset"], row["model"]): row for row in result["summary"]
+    }
+    queries = {
+        (row["dataset"], row["model"], int(row["rate"])): row
+        for row in result["queries"]
+    }
+    lines = [
+        "## 6. 效率与资源",
+        "",
+        "全部测量在单张独占 Tesla V100 上串行完成。训练时间包含模型内部预处理、优化、早停、最佳模型恢复与测试；推理在静态预处理完成后预热 10 次并同步测量完整图前向 50 次。Micro-F1 是本轮三种子伴随结果，不替代五种子准确率主表。下表突出 HSeCo 与 DVCL，统一 11 模型明细见 `docs/model-efficiency-results.md`。",
+        "",
+        "| Dataset | Model | Params (M) | Train (s) | s/iter | Inference (ms) | Peak GPU (MiB) | Micro-F1 |",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    for dataset in ("acm", "dblp", "aminer"):
+        for model in ("hseco", "dvcl"):
+            row = summary[(dataset, model)]
+            lines.append(
+                f"| {dataset.upper()} | {MODEL_LABELS[model]} | "
+                f"{row['parameter_millions']:.3f} | "
+                f"{row['training_seconds_mean']:.2f} ± "
+                f"{row['training_seconds_std']:.2f} | "
+                f"{row['seconds_per_iteration_mean']:.4f} ± "
+                f"{row['seconds_per_iteration_std']:.4f} | "
+                f"{row['inference_latency_ms_mean_mean']:.3f} ± "
+                f"{row['inference_latency_ms_mean_std']:.3f} | "
+                f"{row['peak_allocated_mib_mean']:.1f} ± "
+                f"{row['peak_allocated_mib_std']:.1f} | "
+                f"{100 * row['micro_f1_mean']:.2f} ± "
+                f"{100 * row['micro_f1_std']:.2f} |"
+            )
+    lines.extend([
+        "",
+        "自适应攻击查询成本仅描述攻击侧计算量。$\Delta=5$ 时，每目标平均 victim-model 查询次数如下；查询更少不代表模型更鲁棒。",
+        "",
+        "| Dataset | HSeCo | DVCL |",
+        "|---|---:|---:|",
+    ])
+    for dataset in ("acm", "dblp", "aminer"):
+        cells = []
+        for model in ("hseco", "dvcl"):
+            row = queries[(dataset, model, 5)]
+            cells.append(
+                f"{row['queries_per_target_mean']:.1f} ± "
+                f"{row['queries_per_target_std']:.1f}"
+            )
+        lines.append(f"| {dataset.upper()} | " + " | ".join(cells) + " |")
+    lines.extend([
+        "",
+        "| $K$ | State parameters (M) | Relative to $K=4$ |",
+        "|---:|---:|---:|",
+    ])
+    for row in sorted(result["capacity"], key=lambda value: value["heads"]):
+        lines.append(
+            f"| {int(row['heads'])} | {row['state_elements'] / 1_000_000:.3f} | "
+            f"{row['relative_to_k4']:.2f}× |"
+        )
+    training_speedups = []
+    inference_ratios = []
+    for dataset in ("acm", "dblp", "aminer"):
+        hseco = summary[(dataset, "hseco")]
+        dvcl = summary[(dataset, "dvcl")]
+        training_speedups.append(
+            hseco["training_seconds_mean"] / dvcl["training_seconds_mean"]
+        )
+        inference_ratios.append(
+            dvcl["inference_latency_ms_mean_mean"]
+            / hseco["inference_latency_ms_mean_mean"]
+        )
+    lines.extend([
+        "",
+        "DVCL 与 HSeCo 在三个数据集上的参数量逐项相同。DVCL 完整训练分别快 "
+        + "、".join(f"{value:.2f}×" for value in training_speedups)
+        + "，但完整图推理延迟分别为 HSeCo 的 "
+        + "、".join(f"{value:.2f}×" for value in inference_ratios)
+        + "。因此证据支持“训练更快”，不支持“训练与推理全面更高效”。$K=8$ 的容量为 $K=4$ 的 1.37×，F3 多头曲线同时包含容量变化。",
         "",
     ])
     return lines

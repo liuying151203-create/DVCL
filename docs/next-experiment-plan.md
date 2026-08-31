@@ -304,6 +304,15 @@ python scripts/run_suite.py \
 python scripts/analyze_model_efficiency.py
 ```
 
+### 阶段 F4 验收结论
+
+- 统一 11 模型在 ACM、DBLP、AMiner clean 条件下完成 99/99 次正式运行；失败、缺失、输入哈希、manifest、参数量跨种子不变量和 profiling 字段问题均为 0。
+- 全部 manifest 来自干净提交 `947224978d6dd93ed2a08b4ff1cdd103511a5804`，固定使用独占 `cuda:4` Tesla V100-PCIE-32GB；推理均预热 10 次并同步测量 50 次。
+- DVCL 与 HSeCo 在三个数据集上的可训练参数量逐项相同；DVCL 完整训练在 ACM、DBLP、AMiner 分别快 1.53×、1.97×、2.20×，但完整图推理延迟分别为 HSeCo 的 1.70×、1.52×、1.33×。
+- DVCL 相对 HSeCo 的峰值 allocated 显存在 ACM、DBLP、AMiner 分别变化 -30.2%、+1.3%、-41.9%；效率结论必须区分训练、推理和显存，不表述为全面更高效。
+- F3 的 $K=1,2,4,8$ 状态参数量相对 $K=4$ 分别为 0.72×、0.81×、1.00×、1.37×，确认多头敏感性同时包含容量变化。
+- 结果见 `docs/model-efficiency-results.md`，机器审计见 `outputs/analysis/model_efficiency_v1/`。
+
 ## 9. 阶段 G：最终冻结
 
 - 重新运行结果汇总和文档生成器。
@@ -322,4 +331,4 @@ python scripts/analyze_model_efficiency.py
 
 ## 10. 开工顺序
 
-阶段 A–E、F1、F2、F2.5 和 F3 已全部验收。论文模型保持 `concat + graph_hard`，不主张普遍自适应鲁棒性。下一步进入 F4：先冻结统一硬件、预热次数、重复次数和计时边界，再测量参数量、训练时间、推理时间、攻击查询成本与峰值显存；F4 完成并暂停汇报后再进入 F5。
+阶段 A–E、F1、F2、F2.5、F3 和 F4 已全部验收。论文模型保持 `concat + graph_hard`，不主张普遍自适应鲁棒性。下一步进入 F5：先冻结关键主张、比较族、配对单位、置信区间和多重校正规则，再重新生成最终统计表与论文图表；F5 完成并暂停汇报后进入阶段 G 最终冻结。

@@ -126,8 +126,15 @@ def _spec_from_command(command):
     )
 
 
-def collect_efficiency_rows(config_path):
+def load_efficiency_config(config_path, device=None):
     config = run_suite.load_config(config_path)
+    if device is not None:
+        config["device"] = device
+    return config
+
+
+def collect_efficiency_rows(config_path, device=None):
+    config = load_efficiency_config(config_path, device)
     commands = list(run_suite.commands(config, sys.executable, ROOT))
     rows = []
     issues = []
@@ -155,7 +162,8 @@ def collect_efficiency_rows(config_path):
             metrics = json.loads(
                 required["metrics.json"].read_text(encoding="utf-8")
             )
-            if manifest.get("experiment") != asdict(spec):
+            expected_experiment = json.loads(json.dumps(asdict(spec)))
+            if manifest.get("experiment") != expected_experiment:
                 raise ValueError("manifest experiment spec mismatch")
             for fingerprint in manifest.get("inputs", {}).values():
                 path = Path(fingerprint["path"])
@@ -385,7 +393,7 @@ def render_report(summary, queries, capacity, audit):
         "- 推理：静态图预处理完成后执行完整图前向，预热 10 次并同步测量 50 次。",
         "- 训练时间包含训练器内部预处理、模型构建、优化、早停、最佳模型恢复与一次测试；不含 artifact 磁盘读取和额外 profiling 前向。",
         "- 峰值显存为 CUDA allocated memory；查询成本复用正式自适应攻击，仅报告查询次数，不报告不可公平比较的旧墙钟时间。",
-        "- 准确率列仅报告 Micro-F1。",
+        "- 准确率列仅报告本轮三个训练种子的 Micro-F1，作为效率测量伴随结果；论文准确率主结论仍以五种子主实验和多攻击种子复验为准。",
         "",
         "## 模型效率",
         "",
@@ -437,7 +445,41 @@ def render_report(summary, queries, capacity, audit):
             f"| {row['heads']} | {row['state_elements'] / 1_000_000:.3f} | "
             f"{row['relative_to_k4']:.2f}× |"
         )
+    training_speedups = []
+    inference_ratios = []
+    memory_changes = []
+    for dataset in DATASET_ORDER:
+        hseco = lookup[(dataset, "hseco")]
+        dvcl = lookup[(dataset, "dvcl")]
+        training_speedups.append(
+            hseco["training_seconds_mean"] / dvcl["training_seconds_mean"]
+        )
+        inference_ratios.append(
+            dvcl["inference_latency_ms_mean_mean"]
+            / hseco["inference_latency_ms_mean_mean"]
+        )
+        memory_changes.append(
+            100 * (
+                dvcl["peak_allocated_mib_mean"]
+                / hseco["peak_allocated_mib_mean"] - 1
+            )
+        )
     lines.extend([
+        "",
+        "## 结果分析",
+        "",
+        "- DVCL 与 HSeCo 在三个数据集上的可训练参数量逐项相同；差异来自计算路径和优化过程，而不是通过缩小模型获得。",
+        "- DVCL 的完整训练时间分别比 HSeCo 快 "
+        + "、".join(f"{value:.2f}×" for value in training_speedups)
+        + "（ACM、DBLP、AMiner）；`s/iter` 也呈相同方向，说明优势不只来自更早停止。",
+        "- DVCL 的完整图推理延迟分别为 HSeCo 的 "
+        + "、".join(f"{value:.2f}×" for value in inference_ratios)
+        + "，双视图前向带来稳定的推理开销，不能表述为全面更高效。",
+        "- DVCL 相对 HSeCo 的峰值 allocated 显存变化分别为 "
+        + "、".join(f"{value:+.1f}%" for value in memory_changes)
+        + "；ACM、AMiner 更低，DBLP 基本持平。",
+        "- 自适应查询次数描述攻击搜索成本，不等同于模型鲁棒性；攻击效果仍以目标 Micro-F1、下降幅度和 ASR 为准。",
+        "- $K=8$ 的状态参数量为 $K=4$ 的 1.37×，因此 F3 的多头敏感性同时包含容量变化，不能解释为纯注意力头数效应。",
         "",
         "## 审计结论",
         "",
@@ -471,7 +513,7 @@ def main():
         if hardware_path.is_file() else {"ok": False}
     )
     config, commands, rows, collection_issues = collect_efficiency_rows(
-        config_path
+        config_path, hardware.get("device")
     )
     issues = validate_rows(config, commands, rows, collection_issues, hardware)
     audit = {

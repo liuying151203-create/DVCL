@@ -1,6 +1,10 @@
 import pytest
 
-from scripts.analyze_paper_results import _ablation_rows, _ablation_table_lines
+from scripts.analyze_paper_results import (
+    _ablation_rows,
+    _ablation_table_lines,
+    _model_efficiency_lines,
+)
 from dvcl_bench.paper_analysis import (
     average_ranks,
     holm_adjust,
@@ -105,3 +109,53 @@ def test_ablation_summary_keeps_acm_and_dblp_separate():
     )["micro_f1_mean"] == pytest.approx(0.9)
     dblp_lines = _ablation_table_lines(summary, "dblp")
     assert dblp_lines[0].startswith("| Full DVCL | 70.00")
+
+
+def test_model_efficiency_lines_separate_training_and_inference_claims():
+    summary = []
+    queries = []
+    for dataset in ("acm", "dblp", "aminer"):
+        for model, training, inference in (
+            ("hseco", 20.0, 2.0),
+            ("dvcl", 10.0, 3.0),
+        ):
+            summary.append({
+                "dataset": dataset,
+                "model": model,
+                "parameter_millions": 1.0,
+                "training_seconds_mean": training,
+                "training_seconds_std": 0.1,
+                "seconds_per_iteration_mean": training / 100,
+                "seconds_per_iteration_std": 0.001,
+                "inference_latency_ms_mean_mean": inference,
+                "inference_latency_ms_mean_std": 0.1,
+                "peak_allocated_mib_mean": 100.0,
+                "peak_allocated_mib_std": 1.0,
+                "micro_f1_mean": 0.8,
+                "micro_f1_std": 0.01,
+            })
+            queries.append({
+                "dataset": dataset,
+                "model": model,
+                "rate": 5,
+                "queries_per_target_mean": 100.0,
+                "queries_per_target_std": 2.0,
+            })
+    result = {
+        "summary": summary,
+        "queries": queries,
+        "capacity": [
+            {
+                "heads": heads,
+                "state_elements": heads * 1000,
+                "relative_to_k4": heads / 4,
+            }
+            for heads in (1, 2, 4, 8)
+        ],
+    }
+    document = "\n".join(_model_efficiency_lines(result))
+    assert "## 6. 效率与资源" in document
+    assert "Micro-F1" in document
+    assert "Macro" not in document
+    assert "训练更快" in document
+    assert "不支持“训练与推理全面更高效”" in document
