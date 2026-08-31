@@ -313,6 +313,31 @@ python scripts/analyze_model_efficiency.py
 - F3 的 $K=1,2,4,8$ 状态参数量相对 $K=4$ 分别为 0.72×、0.81×、1.00×、1.37×，确认多头敏感性同时包含容量变化。
 - 结果见 `docs/model-efficiency-results.md`，机器审计见 `outputs/analysis/model_efficiency_v1/`。
 
+### 阶段 F5 冻结分析协议
+
+- 性质：F5 不新增模型训练，复用已经完成并审计的 720 次 ACM/DBLP 多攻击种子 poisoning、280 次 ACM/DBLP 消融、99 次统一模型自适应搜索、F2.5 视图诊断和 F3 敏感性结果。
+- 透明性：模型结果在精确统计比较族冻结前已经可见，因此本阶段标记为 `post_hoc_frozen`，不得描述为前瞻性预注册；冻结后不根据显著性结果增删比较。
+- Poisoning：以 DVCL 为参照，对 HAN、HeteroSAGE、HSeCo 执行 ACM/DBLP × PRBCD/HetePRBCD/总体共 18 个比较；配对单位为 $(s_a,s_t)$，每个比较 $n=15$，Holm 校正族按“数据集 × 攻击族”划分。
+- 消融：以 Full DVCL 为参照，对三个统一 `w/o` 变体执行 ACM/DBLP × clean/Attack Average 共 12 个比较；配对单位为训练种子，每个比较 $n=5$，Holm 校正族按“数据集 × 条件”划分。
+- 自适应攻击：以 DVCL 为参照，对其余 10 个模型执行三个数据集共 30 个比较；每个比较先在同一配对种子内平均 $\Delta=1,3,5$，$n=3$，Holm 校正族按数据集划分。
+- 统计量：统一报告配对均值效应及 Student-$t$ 95% CI、双侧 Wilcoxon signed-rank、W/T/L 和族内 Holm 校正 $p$ 值；效应单位为 Micro-F1 百分点，不报告 Macro-F1。
+- 图表：冻结 9 张图，包括四张 poisoning 曲线、下降幅度、平均排名、统一自适应攻击、正式三种子视图诊断和超参数敏感性；每张同时生成 PNG 与 PDF 并记录 SHA-256。
+- 权威配置：`configs/protocols/paper_statistical_analysis_v1.yaml`；输出为 `outputs/paper_analysis/statistical_audit.json`、统计 CSV、`docs/final-experiment-results.md` 和 `docs/figures/paper/`。
+
+```bash
+source scripts/activate_gpu_env.sh
+python scripts/analyze_paper_results.py
+```
+
+### 阶段 F5 验收结论
+
+- F5 未新增模型训练，按 `paper_statistical_analysis_v1` 完成 18 个 poisoning、12 个消融和 30 个模型自适应攻击配对比较，并审计 48 个 poisoning 下降单元；比较数、配对样本数、置信区间、W/T/L 和族内 Holm 校正问题数均为 0。
+- 总体攻击平均下，DVCL 相对 HSeCo 在 ACM、DBLP 分别提高 1.96 pp（95% CI [1.66, 2.25]）和 2.18 pp（95% CI [1.59, 2.78]），两者均为 15/0/0，$p_{Holm}=1.83\times10^{-4}$；ACM 相对 HAN/HeteroSAGE 未达到校正后显著。
+- 六个 Attack Avg. 消融比较均为 5/0/0 且配对均值 95% CI 高于 0，但受 $n=5$ 和 Wilcoxon 离散分辨率限制，经 Holm 校正后均为 0.188，论文中仅作为一致方向和机制证据。
+- 正式三种子视图诊断显示，DBLP 自适应预算从 $\Delta=1$ 增至 5 时 feature 分支目标 Micro-F1 保持 71.33，topology 分支由 56.00 降至 37.33，拓扑表征漂移和视图分歧同步增大，支持拓扑视图失效机制。
+- 冻结的 9 张论文图均生成 PNG/PDF，共 18 个文件，非空检查与 SHA-256 审计问题数为 0；机器审计见 `outputs/paper_analysis/statistical_audit.json`。
+- 因精确比较族是在结果已知后冻结，本阶段状态保持 `post_hoc_frozen`，不得写成前瞻性预注册；阶段 F5 验收通过，下一步进入阶段 G 最终冻结。
+
 ## 9. 阶段 G：最终冻结
 
 - 重新运行结果汇总和文档生成器。
@@ -331,4 +356,4 @@ python scripts/analyze_model_efficiency.py
 
 ## 10. 开工顺序
 
-阶段 A–E、F1、F2、F2.5、F3 和 F4 已全部验收。论文模型保持 `concat + graph_hard`，不主张普遍自适应鲁棒性。下一步进入 F5：先冻结关键主张、比较族、配对单位、置信区间和多重校正规则，再重新生成最终统计表与论文图表；F5 完成并暂停汇报后进入阶段 G 最终冻结。
+阶段 A–E、F1、F2、F2.5、F3、F4 和 F5 已全部验收。论文模型保持 `concat + graph_hard`，不主张普遍自适应鲁棒性。下一步进入阶段 G：在干净提交上重建全部汇总，执行完整测试与协议审计，并冻结环境、Git、artifact、checkpoint、结果、图表哈希和论文复现命令。

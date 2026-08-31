@@ -1,9 +1,10 @@
 import json
+import math
 import statistics
 from collections import defaultdict
 from pathlib import Path
 
-from scipy.stats import rankdata, wilcoxon
+from scipy.stats import rankdata, t, wilcoxon
 
 
 def load_protocol_rows(run_root: Path, protocols):
@@ -101,27 +102,57 @@ def paired_significance(rows, reference="dvcl"):
                 ]
                 if not pairs:
                     continue
-                reference_values = [pair[0] for pair in pairs]
-                baseline_values = [pair[1] for pair in pairs]
                 differences = [left - right for left, right in pairs]
-                p_value = _wilcoxon_pvalue(reference_values, baseline_values)
+                comparison = paired_effect_statistics(differences)
                 comparisons.append({
                     "dataset": dataset,
                     "attack": attack,
+                    "correction_family": f"{dataset}:{attack}",
                     "reference": reference,
                     "baseline": baseline,
-                    "n": len(pairs),
-                    "effect_pp": 100 * statistics.mean(differences),
-                    "wins": sum(value > 1e-12 for value in differences),
-                    "ties": sum(abs(value) <= 1e-12 for value in differences),
-                    "losses": sum(value < -1e-12 for value in differences),
-                    "p_value": p_value,
+                    **comparison,
                 })
-    adjusted = holm_adjust([row["p_value"] for row in comparisons])
-    for row, p_holm in zip(comparisons, adjusted):
-        row["p_holm"] = p_holm
-        row["significant_0_05"] = p_holm < 0.05
+    families = defaultdict(list)
+    for row in comparisons:
+        families[row["correction_family"]].append(row)
+    for rows in families.values():
+        adjusted = holm_adjust([row["p_value"] for row in rows])
+        for row, p_holm in zip(rows, adjusted):
+            row["p_holm"] = p_holm
+            row["significant_0_05"] = p_holm < 0.05
     return comparisons
+
+
+def paired_effect_statistics(differences, confidence=0.95):
+    values = [float(value) for value in differences]
+    if not values:
+        raise ValueError("paired differences must not be empty")
+    ci_low, ci_high = mean_t_interval(values, confidence)
+    return {
+        "n": len(values),
+        "effect_pp": 100 * statistics.fmean(values),
+        "effect_ci_low_pp": 100 * ci_low,
+        "effect_ci_high_pp": 100 * ci_high,
+        "wins": sum(value > 1e-12 for value in values),
+        "ties": sum(abs(value) <= 1e-12 for value in values),
+        "losses": sum(value < -1e-12 for value in values),
+        "p_value": _wilcoxon_pvalue(values),
+    }
+
+
+def mean_t_interval(values, confidence=0.95):
+    values = [float(value) for value in values]
+    if not values:
+        raise ValueError("values must not be empty")
+    mean = statistics.fmean(values)
+    if len(values) < 2:
+        return mean, mean
+    deviation = statistics.stdev(values)
+    if deviation == 0:
+        return mean, mean
+    critical = float(t.ppf((1 + confidence) / 2, len(values) - 1))
+    margin = critical * deviation / math.sqrt(len(values))
+    return mean - margin, mean + margin
 
 
 def average_ranks(rows):
@@ -196,8 +227,7 @@ def holm_adjust(p_values):
     return adjusted
 
 
-def _wilcoxon_pvalue(left, right):
-    differences = [first - second for first, second in zip(left, right)]
+def _wilcoxon_pvalue(differences):
     if all(abs(value) <= 1e-12 for value in differences):
         return 1.0
-    return float(wilcoxon(left, right, alternative="two-sided").pvalue)
+    return float(wilcoxon(differences, alternative="two-sided").pvalue)

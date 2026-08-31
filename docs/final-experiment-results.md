@@ -17,6 +17,8 @@
 
 统一训练设置为 $E_{max}=200$、$P=100$ 和完整模型 checkpoint。Poisoning 扰动率为 $r\in\{5,10,15,20,25\}\%$；目标逃逸预算为 $\Delta\in\{1,3,5\}$。表格报告均值 ± 样本标准差。
 
+F5 统计口径由 `configs/protocols/paper_statistical_analysis_v1.yaml` 冻结：报告配对均值效应的 Student-$t$ 95% CI、双侧 Wilcoxon signed-rank 和族内 Holm 校正。由于精确比较族冻结前结果已经可见，本阶段明确标记为 `post_hoc_frozen`，不作为前瞻性预注册。
+
 完整性检查覆盖 18 套协议、4501/4501 次运行，所有主表单元及方法版本审计均通过覆盖与输入哈希校验。
 
 ## 2. 三数据集统一十一模型全局 Poisoning
@@ -90,20 +92,22 @@
 
 正效应表示 DVCL 更高；W/T/L 为 15 个配对的胜/平/负次数。
 
-| Dataset | Baseline | $n$ | Effect (pp) | W/T/L | $p_{Holm}$ |
-|---|---|---:|---:|---:|---:|
-| ACM | HAN | 15 | +1.69 | 6/0/9 | 1 |
-| ACM | HeteroSAGE | 15 | +0.40 | 9/0/6 | 1 |
-| ACM | HSeCo | 15 | +1.96 | 15/0/0 | 0.0011 |
-| DBLP | HAN | 15 | +23.93 | 15/0/0 | 0.0011 |
-| DBLP | HeteroSAGE | 15 | +14.84 | 15/0/0 | 0.0011 |
-| DBLP | HSeCo | 15 | +2.18 | 15/0/0 | 0.0011 |
+| Dataset | Baseline | $n$ | Effect (pp) | Paired 95% CI | W/T/L | $p_{Holm}$ |
+|---|---|---:|---:|---:|---:|---:|
+| ACM | HAN | 15 | +1.69 | [-0.10, +3.48] | 6/0/9 | 1 |
+| ACM | HeteroSAGE | 15 | +0.40 | [-0.44, +1.23] | 9/0/6 | 1 |
+| ACM | HSeCo | 15 | +1.96 | [+1.66, +2.25] | 15/0/0 | 0.000183 |
+| DBLP | HAN | 15 | +23.93 | [+22.42, +25.44] | 15/0/0 | 0.000183 |
+| DBLP | HeteroSAGE | 15 | +14.84 | [+13.78, +15.90] | 15/0/0 | 0.000183 |
+| DBLP | HSeCo | 15 | +2.18 | [+1.59, +2.78] | 15/0/0 | 0.000183 |
 
 | Scope | HAN | HeteroSAGE | HSeCo | DVCL |
 |---|---:|---:|---:|---:|
 | ACM | 2.03 | 2.20 | 3.76 | 2.01 |
 | DBLP | 2.76 | 3.43 | 1.97 | 1.84 |
 | ALL | 2.39 | 2.82 | 2.86 | 1.93 |
+
+总体攻击平均下，DVCL 相对 HSeCo 在 ACM 和 DBLP 的配对增益分别为 1.96 pp （95% CI [1.66, 2.25]）和 2.18 pp （95% CI [1.59, 2.78]），两者的 $p_{Holm}=0.000183$。ACM 相对 HAN 与 HeteroSAGE 的置信区间跨 0，不能宣称显著优于这两个基线。
 
 ## 4. 目标逃逸攻击
 
@@ -267,6 +271,27 @@ ACM 和 AMiner 中 DVCL 在当前 64+64 有限候选攻击下未出现目标 Mic
 | w/o Feature View | 89.26 ± 0.58 | 86.88 ± 1.18 | 71.16 ± 1.92 | 79.02 ± 1.54 |
 | w/o Topology View | 79.79 ± 0.47 | 79.79 ± 0.47 | 79.79 ± 0.47 | 79.79 ± 0.47 |
 
+**配对组件贡献**
+
+正效应表示 Full DVCL 更高；Attack Avg. 在每个训练种子内先跨 PRBCD/HetePRBCD 三档扰动率平均。每个数据集与条件构成一个包含三个消融比较的 Holm 校正族。
+
+| Dataset | Condition | Variant | $n$ | Effect (pp) [95% CI] | W/T/L | $p_{Holm}$ |
+|---|---|---|---:|---:|---:|---:|
+| ACM | Clean | w/o Cross-view CL | 5 | +0.52 [-0.08, +1.12] | 4/0/1 | 0.25 |
+| ACM | Clean | w/o Feature View | 5 | +1.04 [-0.20, +2.28] | 4/0/1 | 0.25 |
+| ACM | Clean | w/o Topology View | 5 | +2.17 [+0.75, +3.58] | 5/0/0 | 0.188 |
+| ACM | Attack Avg. | w/o Cross-view CL | 5 | +0.63 [+0.24, +1.02] | 5/0/0 | 0.188 |
+| ACM | Attack Avg. | w/o Feature View | 5 | +2.03 [+1.43, +2.63] | 5/0/0 | 0.188 |
+| ACM | Attack Avg. | w/o Topology View | 5 | +1.59 [+0.45, +2.73] | 5/0/0 | 0.188 |
+| DBLP | Clean | w/o Cross-view CL | 5 | +1.53 [-0.16, +3.23] | 5/0/0 | 0.188 |
+| DBLP | Clean | w/o Feature View | 5 | +0.30 [-0.69, +1.28] | 3/0/2 | 0.625 |
+| DBLP | Clean | w/o Topology View | 5 | +9.76 [+8.61, +10.92] | 5/0/0 | 0.188 |
+| DBLP | Attack Avg. | w/o Cross-view CL | 5 | +1.42 [+0.99, +1.86] | 5/0/0 | 0.188 |
+| DBLP | Attack Avg. | w/o Feature View | 5 | +5.54 [+4.51, +6.58] | 5/0/0 | 0.188 |
+| DBLP | Attack Avg. | w/o Topology View | 5 | +4.77 [+3.62, +5.93] | 5/0/0 | 0.188 |
+
+六个 Attack Avg. 比较均为 5/0/0，且配对均值 95% CI 均高于 0；但 $n=5$ 时双侧 Wilcoxon 的离散分辨率有限，经每族三个比较的 Holm 校正后均为 $p_{Holm}=0.188$。因此可报告稳定的正向效应与区间，不将其写成校正后显著。
+
 ### 拓扑实现版本审计
 
 两个版本均使用 $\lambda_h=1$，仅比较第二级语义硬过滤是否保留。正式审计包含 clean、HetePRBCD 25% 和针对各自 checkpoint 独立优化的目标逃逸攻击。
@@ -277,6 +302,8 @@ ACM 和 AMiner 中 DVCL 在当前 64+64 有限候选攻击下未出现目标 Mic
 | Graph + no second filter + $L_{HAN}$ | 88.60 ± 0.26 | 82.08 ± 1.19 | 61.33 ± 3.06 | 43.33 ± 1.15 | 33.33 ± 3.06 |
 
 `graph_no_filter` 相对 `graph_hard` 在 $\Delta=1,3,5$ 下的攻击后 Micro-F1 差异依次为 +4.00、+1.33、-7.33 pp，且最大配对 HetePRBCD 损失为 3.82 pp，未通过预注册门槛。因此论文方法版本冻结为 `graph_hard`；`han_semantic` 不进入同架构敏感性实验。
+
+正式三种子视图诊断进一步显示：从 $\Delta=1$ 增至 5，feature 分支目标 Micro-F1 保持 71.33，topology 分支由 56.00 降至 37.33；topology embedding 的 $L_2$ 漂移由 1.56 增至 2.00，攻击后视图分歧由 34.67% 增至 50.67%（clean 为 29.33%）。这支持“DBLP 自适应攻击主要破坏拓扑视图”的机制解释。
 
 ### DVCL 超参数敏感性
 
@@ -340,10 +367,11 @@ AMiner 的预算与 artifact 验证均正确，但替代模型和正式模型下
 3. DVCL 在 DBLP PRBCD 平均下低于 HSeCo；ACM 相对 HAN/HeteroSAGE 的多种子差异未达到校正后显著。
 4. HG 固定迁移攻击、自适应查询攻击和 poisoning 具有不同语义，禁止合并计算总 Attack Average。
 5. 统一 11 模型自适应矩阵及视图失效诊断已完成；可靠性门控候选未通过预注册门槛，因此论文模型冻结为 `concat`，并明确 DBLP 自适应目标逃逸脆弱性。
-6. ACM/DBLP 消融均支持双视图和跨视图对比学习的正贡献；DBLP 中移除特征视图后 HetePRBCD 平均下降 10.88 pp，说明特征视图主要缓冲拓扑攻击。
+6. ACM/DBLP 消融方向一致，且 DBLP 中移除特征视图后 HetePRBCD 平均下降 10.88 pp；但每个消融比较只有 $n=5$，Wilcoxon 经 Holm 校正后均未显著，只能作为一致方向和机制证据。
 7. 拓扑实现版本审计不支持取消第二级语义硬过滤；F3 超参数敏感性固定使用 `graph_hard`，避免继续混用历史拓扑实现。
 8. F3 的五个预注册参数均通过 2 pp 局部稳定门槛；该结果只覆盖 DBLP clean 与 HetePRBCD 15%，不用于替换冻结参数或外推自适应鲁棒性。
 9. F4 显示 DVCL 相对 HSeCo 训练更快但完整图推理更慢；效率结论必须按训练、推理和显存分别陈述，不能概括为全面更高效。
+10. F5 共审计 60 个配对比较、48 个 poisoning 下降单元和 9 张双格式图，问题数为 0；因其为 `post_hoc_frozen`，统计结果用于约束论文表述而非声称前瞻性验证。
 
 ## 8. 论文图表
 
@@ -351,9 +379,13 @@ AMiner 的预算与 artifact 验证均正确，但替代模型和正式模型下
 
 ![DBLP HetePRBCD 多种子曲线](figures/paper/dblp_heteprbcd_curve.png)
 
+![多种子 Poisoning 下降幅度](figures/paper/multi_seed_poisoning_drop.png)
+
 ![多种子平均排名](figures/paper/multi_seed_average_rank.png)
 
 ![十一模型自适应目标逃逸](figures/paper/adaptive_target_evasion_11model.png)
+
+![DVCL 视图失效诊断](figures/paper/dvcl_view_diagnosis.png)
 
 ![DVCL 超参数敏感性](figures/paper/dvcl_hyperparameter_sensitivity.png)
 

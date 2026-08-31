@@ -42,6 +42,11 @@ def _adaptive_summary(graph_no_filter=0.47):
                 "clean_target_micro_f1_mean": 0.9,
                 "attacked_target_micro_f1_mean": value,
                 "attacked_target_micro_f1_std": 0.01,
+                "attacked_feature_target_micro_f1_mean": 0.75,
+                "attacked_topology_target_micro_f1_mean": value - 0.02,
+                "drift_topology_l2_mean_mean": 0.3 * rate,
+                "clean_view_disagreement_rate_mean": 0.2,
+                "attacked_view_disagreement_rate_mean": 0.2 + 0.01 * rate,
                 "micro_f1_drop_mean": 0.9 - value,
             })
     return rows
@@ -108,4 +113,5 @@ def test_paper_topology_section_uses_audited_summary():
     }))
     assert "### 拓扑实现版本审计" in section
     assert "Graph + hard filter" in section
+    assert "正式三种子视图诊断" in section
     assert "Macro" not in section

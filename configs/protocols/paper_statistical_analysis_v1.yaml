@@ -1,0 +1,67 @@
+protocol: paper_statistical_analysis_v1
+status: post_hoc_frozen
+metric: micro_f1
+confidence_level: 0.95
+effect_unit: percentage_points
+test: paired_two_sided_wilcoxon_signed_rank
+multiple_testing: holm_family_wise
+
+poisoning:
+  source_protocol: acm_dblp_attack_seed_recheck_v1
+  datasets: [acm, dblp]
+  reference: dvcl
+  baselines: [han, heterosage, hseco]
+  attacks: [prbcd, heteprbcd, all]
+  primary_attack: all
+  rates: [5, 15, 25]
+  paired_by: [attack_seed, train_seed]
+  correction_family_by: [dataset, attack]
+  expected_comparisons: 18
+
+ablation:
+  source_protocols:
+    - acm_poisoning_ablation_v1
+    - dblp_poisoning_ablation_v1
+  datasets: [acm, dblp]
+  reference: full
+  variants: [no_cl, topology_only, feature_only]
+  conditions: [clean, all]
+  paired_by: [train_seed]
+  correction_family_by: [dataset, condition]
+  expected_comparisons: 12
+
+adaptive:
+  source_protocol: adaptive_target_evasion_v1
+  datasets: [acm, dblp, aminer]
+  reference: dvcl
+  baselines:
+    - han
+    - heterosage
+    - rohe
+    - heteroguard
+    - fastrohgcn
+    - hgt
+    - magnn
+    - heco
+    - simplehgn
+    - hseco
+  rates: [1, 3, 5]
+  paired_by: [attack_seed, train_seed]
+  correction_family_by: [dataset]
+  expected_comparisons: 30
+
+figures:
+  - acm_prbcd_curve
+  - acm_heteprbcd_curve
+  - dblp_prbcd_curve
+  - dblp_heteprbcd_curve
+  - multi_seed_poisoning_drop
+  - multi_seed_average_rank
+  - adaptive_target_evasion_11model
+  - dvcl_view_diagnosis
+  - dvcl_hyperparameter_sensitivity
+
+limitations:
+  - outcomes_were_known_before_exact_statistical_families_were_frozen
+  - aminer_poisoning_has_only_one_formal_attack_seed
+  - adaptive_comparisons_have_three_paired_repeats_per_dataset

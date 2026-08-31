@@ -16,12 +16,14 @@ if str(SRC) not in sys.path:
 from dvcl_bench.paper_analysis import (
     average_ranks,
     family_averages,
+    holm_adjust,
     load_protocol_rows,
+    paired_effect_statistics,
     paired_significance,
     summarize,
     target_summary,
 )
-from dvcl_bench.artifacts import load_attack_artifact
+from dvcl_bench.artifacts import file_sha256, load_attack_artifact
 from scripts.analyze_adaptive_pilot import (
     adaptive_average_ranks,
     aggregate_rows as aggregate_adaptive_rows,
@@ -65,6 +67,9 @@ SENSITIVITY_ANALYSIS = (
 EFFICIENCY_ANALYSIS = (
     ROOT / "outputs" / "analysis" / "model_efficiency_v1"
 )
+STATISTICAL_CONFIG = (
+    ROOT / "configs" / "protocols" / "paper_statistical_analysis_v1.yaml"
+)
 EXPECTED_PROTOCOL_RUNS = {
     "acm_poisoning_main_v1": 220,
     "dblp_poisoning_main_v1": 220,
@@ -102,6 +107,17 @@ MODEL_LABELS = {
     "hseco": "HSeCo",
     "dvcl": "DVCL",
 }
+PAPER_FIGURES = (
+    "acm_prbcd_curve",
+    "acm_heteprbcd_curve",
+    "dblp_prbcd_curve",
+    "dblp_heteprbcd_curve",
+    "multi_seed_poisoning_drop",
+    "multi_seed_average_rank",
+    "adaptive_target_evasion_11model",
+    "dvcl_view_diagnosis",
+    "dvcl_hyperparameter_sensitivity",
+)
 
 
 def parse_args():
@@ -116,8 +132,104 @@ def parse_args():
     parser.add_argument(
         "--figure-dir", default=str(ROOT / "docs" / "figures" / "paper")
     )
+    parser.add_argument("--analysis-config", default=str(STATISTICAL_CONFIG))
     parser.add_argument("--skip-figures", action="store_true")
     return parser.parse_args()
+
+
+def _load_statistical_protocol(path):
+    import yaml
+
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing statistical protocol: {path}")
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    expected_top = {
+        "protocol": "paper_statistical_analysis_v1",
+        "status": "post_hoc_frozen",
+        "metric": "micro_f1",
+        "confidence_level": 0.95,
+        "effect_unit": "percentage_points",
+        "test": "paired_two_sided_wilcoxon_signed_rank",
+        "multiple_testing": "holm_family_wise",
+    }
+    for key, expected in expected_top.items():
+        if payload.get(key) != expected:
+            raise ValueError(
+                f"Statistical protocol {key} mismatch: "
+                f"{payload.get(key)!r} != {expected!r}"
+            )
+    expected_sections = {
+        "poisoning": 18,
+        "ablation": 12,
+        "adaptive": 30,
+    }
+    for section, count in expected_sections.items():
+        if payload.get(section, {}).get("expected_comparisons") != count:
+            raise ValueError(
+                f"Statistical protocol {section} comparison count mismatch"
+            )
+    if tuple(payload.get("figures", ())) != PAPER_FIGURES:
+        raise ValueError("Statistical protocol figure set mismatch")
+    return payload
+
+
+def _audit_statistical_outputs(
+    config, poisoning, ablation, adaptive, poisoning_drops,
+):
+    issues = []
+    expected = {
+        "poisoning": int(config["poisoning"]["expected_comparisons"]),
+        "ablation": int(config["ablation"]["expected_comparisons"]),
+        "adaptive": int(config["adaptive"]["expected_comparisons"]),
+    }
+    actual = {
+        "poisoning": len(poisoning),
+        "ablation": len(ablation),
+        "adaptive": len(adaptive),
+    }
+    for name, count in expected.items():
+        if actual[name] != count:
+            issues.append(
+                f"{name} comparisons expected={count} actual={actual[name]}"
+            )
+    for name, rows, paired_n in (
+        ("poisoning", poisoning, 15),
+        ("ablation", ablation, 5),
+        ("adaptive", adaptive, 3),
+    ):
+        for row in rows:
+            if int(row["n"]) != paired_n:
+                issues.append(
+                    f"{name} paired n mismatch: {row.get('correction_family')}"
+                )
+            if not (
+                row["effect_ci_low_pp"] <= row["effect_pp"]
+                <= row["effect_ci_high_pp"]
+            ):
+                issues.append(f"{name} effect is outside confidence interval")
+            if not (0 <= row["p_value"] <= 1 and 0 <= row["p_holm"] <= 1):
+                issues.append(f"{name} invalid p-value")
+            if row["wins"] + row["ties"] + row["losses"] != paired_n:
+                issues.append(f"{name} win/tie/loss coverage mismatch")
+    if len(poisoning_drops) != 48 or any(
+        int(row["n"]) != 15 for row in poisoning_drops
+    ):
+        issues.append("poisoning drop coverage mismatch")
+    audit = {
+        "protocol": config["protocol"],
+        "status": config["status"],
+        "metric": config["metric"],
+        "confidence_level": config["confidence_level"],
+        "test": config["test"],
+        "multiple_testing": config["multiple_testing"],
+        "comparison_counts": actual,
+        "poisoning_drop_cells": len(poisoning_drops),
+        "issues": issues,
+        "ok": not issues,
+    }
+    if issues:
+        raise ValueError("Statistical output audit failed: " + "; ".join(issues))
+    return audit
 
 
 def main() -> int:
@@ -125,6 +237,10 @@ def main() -> int:
     run_root = Path(args.run_root)
     output_dir = Path(args.output_dir)
     docs_dir = Path(args.docs_dir)
+    statistical_config_path = Path(args.analysis_config)
+    if not statistical_config_path.is_absolute():
+        statistical_config_path = ROOT / statistical_config_path
+    statistical_config = _load_statistical_protocol(statistical_config_path)
     protocols = tuple(EXPECTED_PROTOCOL_RUNS)
     rows = load_protocol_rows(run_root, dict.fromkeys(protocols))
     protocol_counts = _validate_protocol_counts(rows)
@@ -146,9 +262,11 @@ def main() -> int:
     multi_family = _multi_seed_family_rows(multi_rows, rows)
     significance = paired_significance(multi_rows)
     ranks = average_ranks(multi_rows)
+    poisoning_drops = _poisoning_drop_rows(multi_rows, rows)
     targets = target_summary(target_rows)
     aminer = _aminer_family_rows(rows, targets)
     ablation = _ablation_rows(rows)
+    ablation_significance = _ablation_significance(rows)
     topology_version = _topology_version_results(TOPOLOGY_VERSION_ANALYSIS)
     sensitivity = _hyperparameter_sensitivity_results(SENSITIVITY_ANALYSIS)
     efficiency = _model_efficiency_results(EFFICIENCY_ANALYSIS)
@@ -166,6 +284,10 @@ def main() -> int:
     adaptive_significance = paired_reference_comparisons(adaptive_rows)
     adaptive_ranks = adaptive_average_ranks(adaptive_rows)
     aminer_audit = _aminer_attack_audit(aminer)
+    statistical_audit = _audit_statistical_outputs(
+        statistical_config, significance, ablation_significance,
+        adaptive_significance, poisoning_drops,
+    )
 
     output_dir.mkdir(parents=True, exist_ok=True)
     _write_csv(output_dir / "benchmark_summary.csv", benchmark_summary)
@@ -174,35 +296,42 @@ def main() -> int:
     _write_csv(output_dir / "multi_seed_family_summary.csv", multi_family)
     _write_csv(output_dir / "significance.csv", significance)
     _write_csv(output_dir / "average_ranks.csv", ranks)
+    _write_csv(output_dir / "poisoning_drop_summary.csv", poisoning_drops)
     _write_csv(output_dir / "target_evasion_summary.csv", targets)
     _write_csv(output_dir / "aminer_family_summary.csv", aminer)
     _write_csv(output_dir / "ablation_summary.csv", ablation)
+    _write_csv(
+        output_dir / "ablation_significance.csv", ablation_significance
+    )
     _write_csv(output_dir / "adaptive_budget_summary.csv", adaptive_budget)
     _write_csv(output_dir / "adaptive_target_summary.csv", adaptive_summary)
     _write_csv(output_dir / "adaptive_target_significance.csv", adaptive_significance)
     _write_csv(output_dir / "adaptive_target_ranks.csv", adaptive_ranks)
     _write_csv(output_dir / "aminer_attack_audit.csv", aminer_audit)
-    (output_dir / "analysis_manifest.json").write_text(
-        json.dumps({
-            "protocols": list(dict.fromkeys(protocols)),
-            "metrics": ["micro_f1"],
-            "protocol_runs": {
-                row["protocol"]: row["completed"] for row in protocol_counts
-            },
-            "benchmark_runs": len(benchmark_rows),
-            "multi_seed_runs": len(multi_rows),
-            "target_runs": len(target_rows),
-            "adaptive_physical_runs": adaptive_completed,
-            "adaptive_logical_results": len(adaptive_rows),
-            "topology_version_audit": topology_version["audit"],
-            "hyperparameter_sensitivity_audit": sensitivity["audit"],
-            "model_efficiency_audit": efficiency["audit"],
-            "significance_test": "paired two-sided Wilcoxon signed-rank",
-            "multiple_testing": "Holm family-wise correction",
-            "adaptive_effect_ci": "paired mean Student-t 95% confidence interval",
-        }, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    analysis_manifest = {
+        "protocols": list(dict.fromkeys(protocols)),
+        "metrics": ["micro_f1"],
+        "protocol_runs": {
+            row["protocol"]: row["completed"] for row in protocol_counts
+        },
+        "benchmark_runs": len(benchmark_rows),
+        "multi_seed_runs": len(multi_rows),
+        "target_runs": len(target_rows),
+        "adaptive_physical_runs": adaptive_completed,
+        "adaptive_logical_results": len(adaptive_rows),
+        "topology_version_audit": topology_version["audit"],
+        "hyperparameter_sensitivity_audit": sensitivity["audit"],
+        "model_efficiency_audit": efficiency["audit"],
+        "statistical_protocol": {
+            "path": str(statistical_config_path.resolve()),
+            "sha256": file_sha256(statistical_config_path),
+            "status": statistical_config["status"],
+        },
+        "statistical_audit": statistical_audit,
+        "significance_test": "paired two-sided Wilcoxon signed-rank",
+        "multiple_testing": "Holm family-wise correction",
+        "paired_effect_ci": "paired mean Student-t 95% confidence interval",
+    }
 
     docs_dir.mkdir(parents=True, exist_ok=True)
     (docs_dir / "final-experiment-results.md").write_text(
@@ -210,7 +339,7 @@ def main() -> int:
             benchmark_summary, benchmark_family, multi_family, significance,
             ranks, targets, ablation, adaptive_summary, adaptive_significance,
             adaptive_ranks, aminer_audit, topology_version, protocol_counts,
-            sensitivity, efficiency,
+            sensitivity, efficiency, ablation_significance,
         ),
         encoding="utf-8",
     )
@@ -225,9 +354,29 @@ def main() -> int:
         encoding="utf-8",
     )
     if not args.skip_figures:
+        figure_dir = Path(args.figure_dir)
         _write_figures(
-            Path(args.figure_dir), multi_summary, ranks, adaptive_summary
+            figure_dir, multi_summary, poisoning_drops, ranks,
+            adaptive_summary, topology_version, sensitivity,
         )
+        figure_audit = _audit_figure_outputs(
+            figure_dir, statistical_config["figures"]
+        )
+    else:
+        figure_audit = {
+            "skipped": True,
+            "expected_visuals": len(statistical_config["figures"]),
+        }
+    statistical_audit["figure_audit"] = figure_audit
+    analysis_manifest["statistical_audit"] = statistical_audit
+    (output_dir / "statistical_audit.json").write_text(
+        json.dumps(statistical_audit, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    (output_dir / "analysis_manifest.json").write_text(
+        json.dumps(analysis_manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     print(
         f"Wrote paper analysis: multi_seed={len(multi_rows)} "
         f"targets={len(target_rows)} output={output_dir}"
@@ -348,6 +497,50 @@ def _multi_seed_family_rows(multi_rows, all_rows):
     return result
 
 
+def _poisoning_drop_rows(multi_rows, all_rows):
+    clean_rows = [
+        row for row in all_rows
+        if row["protocol"] in CLEAN_PROTOCOLS and row["attack"] == "clean"
+    ]
+    clean = {
+        (row["dataset"], row["model"], row["train_seed"]): row["micro_f1"]
+        for row in clean_rows
+    }
+    expected_clean = {
+        (dataset, model, train_seed)
+        for dataset in ("acm", "dblp")
+        for model in ("han", "heterosage", "hseco", "dvcl")
+        for train_seed in (1, 2, 3, 4, 5)
+    }
+    if set(clean) != expected_clean:
+        raise ValueError("Multi-seed poisoning clean pairing is incomplete")
+    grouped = defaultdict(list)
+    for row in multi_rows:
+        key = (row["dataset"], row["model"], row["train_seed"])
+        if key not in clean:
+            raise ValueError(f"Missing paired clean score: {key}")
+        condition = (
+            row["dataset"], row["model"], row["attack"], float(row["rate"])
+        )
+        grouped[condition].append(
+            100 * (clean[key] - row["micro_f1"])
+        )
+    result = []
+    for key, values in sorted(grouped.items()):
+        result.append({
+            "dataset": key[0],
+            "model": key[1],
+            "attack": key[2],
+            "rate": key[3],
+            "n": len(values),
+            "drop_pp_mean": statistics.fmean(values),
+            "drop_pp_std": statistics.stdev(values),
+        })
+    if len(result) != 48 or any(row["n"] != 15 for row in result):
+        raise ValueError("Poisoning drop coverage must be 48 cells with n=15")
+    return result
+
+
 def _ablation_rows(rows):
     selected = [row for row in rows if row["protocol"] in ABLATION_PROTOCOLS]
     per_seed = defaultdict(list)
@@ -375,6 +568,51 @@ def _ablation_rows(rows):
             "micro_f1_std": statistics.stdev(values) if len(values) > 1 else 0.0,
         })
     return result
+
+
+def _ablation_significance(rows):
+    selected = [row for row in rows if row["protocol"] in ABLATION_PROTOCOLS]
+    samples = defaultdict(list)
+    for row in selected:
+        condition = "clean" if row["attack"] == "clean" else "all"
+        samples[
+            (row["dataset"], row["variant"], condition, row["train_seed"])
+        ].append(row["micro_f1"])
+    per_seed = {
+        key: statistics.fmean(values) for key, values in samples.items()
+    }
+    variants = ("no_cl", "topology_only", "feature_only")
+    output = []
+    for dataset in ("acm", "dblp"):
+        for condition in ("clean", "all"):
+            family = []
+            for variant in variants:
+                differences = []
+                for train_seed in (1, 2, 3, 4, 5):
+                    reference_key = (dataset, "full", condition, train_seed)
+                    variant_key = (dataset, variant, condition, train_seed)
+                    if reference_key not in per_seed or variant_key not in per_seed:
+                        raise ValueError(
+                            "Missing paired ablation score: "
+                            f"{dataset}/{condition}/{variant}/seed_{train_seed}"
+                        )
+                    differences.append(
+                        per_seed[reference_key] - per_seed[variant_key]
+                    )
+                family.append({
+                    "dataset": dataset,
+                    "condition": condition,
+                    "correction_family": f"{dataset}:{condition}",
+                    "reference": "full",
+                    "variant": variant,
+                    **paired_effect_statistics(differences),
+                })
+            adjusted = holm_adjust([row["p_value"] for row in family])
+            for row, p_holm in zip(family, adjusted):
+                row["p_holm"] = p_holm
+                row["significant_0_05"] = p_holm < 0.05
+            output.extend(family)
+    return output
 
 
 def _adaptive_budget_rows(run_root):
@@ -522,7 +760,23 @@ def _topology_version_results(output_root):
         (
             "rate", "n", "clean_target_micro_f1_mean",
             "attacked_target_micro_f1_mean", "attacked_target_micro_f1_std",
-            "micro_f1_drop_mean",
+            "micro_f1_drop_mean", "clean_fused_target_micro_f1_mean",
+            "attacked_fused_target_micro_f1_mean",
+            "attacked_fused_target_micro_f1_std",
+            "clean_topology_target_micro_f1_mean",
+            "attacked_topology_target_micro_f1_mean",
+            "attacked_topology_target_micro_f1_std",
+            "clean_feature_target_micro_f1_mean",
+            "attacked_feature_target_micro_f1_mean",
+            "attacked_feature_target_micro_f1_std",
+            "clean_view_disagreement_rate_mean",
+            "clean_view_disagreement_rate_std",
+            "attacked_view_disagreement_rate_mean",
+            "attacked_view_disagreement_rate_std",
+            "drift_topology_l2_mean_mean",
+            "drift_topology_l2_mean_std",
+            "drift_feature_l2_mean_mean",
+            "drift_feature_l2_mean_std",
         ),
     )
     if len(training) != 4 or len(adaptive) != 6:
@@ -660,6 +914,7 @@ def _final_document(
     benchmark, benchmark_family, multi_family, significance, ranks, targets,
     ablation, adaptive, adaptive_significance, adaptive_ranks, aminer_audit,
     topology_version, protocol_counts, sensitivity, efficiency,
+    ablation_significance,
 ):
     completed = sum(row["completed"] for row in protocol_counts)
     lines = [
@@ -681,6 +936,8 @@ def _final_document(
         "| 效率与资源 | ACM、DBLP、AMiner | 统一 11 模型 | $s_{train}=1,2,3$ | 参数量、时间、延迟、显存与查询成本 |",
         "",
         "统一训练设置为 $E_{max}=200$、$P=100$ 和完整模型 checkpoint。Poisoning 扰动率为 $r\\in\\{5,10,15,20,25\\}\\%$；目标逃逸预算为 $\\Delta\\in\\{1,3,5\\}$。表格报告均值 ± 样本标准差。",
+        "",
+        "F5 统计口径由 `configs/protocols/paper_statistical_analysis_v1.yaml` 冻结：报告配对均值效应的 Student-$t$ 95% CI、双侧 Wilcoxon signed-rank 和族内 Holm 校正。由于精确比较族冻结前结果已经可见，本阶段明确标记为 `post_hoc_frozen`，不作为前瞻性预注册。",
         "",
         f"完整性检查覆盖 {len(protocol_counts)} 套协议、{completed}/{completed} 次运行，所有主表单元及方法版本审计均通过覆盖与输入哈希校验。",
         "",
@@ -706,8 +963,8 @@ def _final_document(
         "",
         "正效应表示 DVCL 更高；W/T/L 为 15 个配对的胜/平/负次数。",
         "",
-        "| Dataset | Baseline | $n$ | Effect (pp) | W/T/L | $p_{Holm}$ |",
-        "|---|---|---:|---:|---:|---:|",
+        "| Dataset | Baseline | $n$ | Effect (pp) | Paired 95% CI | W/T/L | $p_{Holm}$ |",
+        "|---|---|---:|---:|---:|---:|---:|",
     ])
     for row in significance:
         if row["attack"] != "all":
@@ -715,6 +972,8 @@ def _final_document(
         lines.append(
             f"| {row['dataset'].upper()} | {MODEL_LABELS[row['baseline']]} | "
             f"{row['n']} | {row['effect_pp']:+.2f} | "
+            f"[{row['effect_ci_low_pp']:+.2f}, "
+            f"{row['effect_ci_high_pp']:+.2f}] | "
             f"{row['wins']}/{row['ties']}/{row['losses']} | {row['p_holm']:.3g} |"
         )
     lines.extend([
@@ -728,7 +987,23 @@ def _final_document(
             for model in ("han", "heterosage", "hseco", "dvcl")
         ]
         lines.append(f"| {dataset.upper()} | " + " | ".join(cells) + " |")
+    acm_hseco = _lookup(
+        significance, dataset="acm", attack="all", baseline="hseco"
+    )
+    dblp_hseco = _lookup(
+        significance, dataset="dblp", attack="all", baseline="hseco"
+    )
     lines.extend([
+        "",
+        "总体攻击平均下，DVCL 相对 HSeCo 在 ACM 和 DBLP 的配对增益分别为 "
+        f"{acm_hseco['effect_pp']:.2f} pp "
+        f"（95% CI [{acm_hseco['effect_ci_low_pp']:.2f}, "
+        f"{acm_hseco['effect_ci_high_pp']:.2f}]）和 "
+        f"{dblp_hseco['effect_pp']:.2f} pp "
+        f"（95% CI [{dblp_hseco['effect_ci_low_pp']:.2f}, "
+        f"{dblp_hseco['effect_ci_high_pp']:.2f}]），两者的 "
+        f"$p_{{Holm}}={acm_hseco['p_holm']:.3g}$。ACM 相对 HAN 与 "
+        "HeteroSAGE 的置信区间跨 0，不能宣称显著优于这两个基线。",
         "",
         "## 4. 目标逃逸攻击",
         "",
@@ -779,6 +1054,7 @@ def _final_document(
         ])
         lines.extend(_ablation_table_lines(ablation, dataset))
         lines.append("")
+    lines.extend(_ablation_significance_lines(ablation_significance))
     lines.extend(_topology_version_lines(topology_version))
     lines.extend(_hyperparameter_sensitivity_lines(sensitivity))
     lines.extend(_model_efficiency_lines(efficiency))
@@ -809,10 +1085,11 @@ def _final_document(
         "3. DVCL 在 DBLP PRBCD 平均下低于 HSeCo；ACM 相对 HAN/HeteroSAGE 的多种子差异未达到校正后显著。",
         "4. HG 固定迁移攻击、自适应查询攻击和 poisoning 具有不同语义，禁止合并计算总 Attack Average。",
         "5. 统一 11 模型自适应矩阵及视图失效诊断已完成；可靠性门控候选未通过预注册门槛，因此论文模型冻结为 `concat`，并明确 DBLP 自适应目标逃逸脆弱性。",
-        "6. ACM/DBLP 消融均支持双视图和跨视图对比学习的正贡献；DBLP 中移除特征视图后 HetePRBCD 平均下降 10.88 pp，说明特征视图主要缓冲拓扑攻击。",
+        "6. ACM/DBLP 消融方向一致，且 DBLP 中移除特征视图后 HetePRBCD 平均下降 10.88 pp；但每个消融比较只有 $n=5$，Wilcoxon 经 Holm 校正后均未显著，只能作为一致方向和机制证据。",
         "7. 拓扑实现版本审计不支持取消第二级语义硬过滤；F3 超参数敏感性固定使用 `graph_hard`，避免继续混用历史拓扑实现。",
         "8. F3 的五个预注册参数均通过 2 pp 局部稳定门槛；该结果只覆盖 DBLP clean 与 HetePRBCD 15%，不用于替换冻结参数或外推自适应鲁棒性。",
         "9. F4 显示 DVCL 相对 HSeCo 训练更快但完整图推理更慢；效率结论必须按训练、推理和显存分别陈述，不能概括为全面更高效。",
+        "10. F5 共审计 60 个配对比较、48 个 poisoning 下降单元和 9 张双格式图，问题数为 0；因其为 `post_hoc_frozen`，统计结果用于约束论文表述而非声称前瞻性验证。",
         "",
         "## 8. 论文图表",
         "",
@@ -820,9 +1097,13 @@ def _final_document(
         "",
         "![DBLP HetePRBCD 多种子曲线](figures/paper/dblp_heteprbcd_curve.png)",
         "",
+        "![多种子 Poisoning 下降幅度](figures/paper/multi_seed_poisoning_drop.png)",
+        "",
         "![多种子平均排名](figures/paper/multi_seed_average_rank.png)",
         "",
         "![十一模型自适应目标逃逸](figures/paper/adaptive_target_evasion_11model.png)",
+        "",
+        "![DVCL 视图失效诊断](figures/paper/dvcl_view_diagnosis.png)",
         "",
         "![DVCL 超参数敏感性](figures/paper/dvcl_hyperparameter_sensitivity.png)",
         "",
@@ -890,12 +1171,31 @@ def _topology_version_lines(result):
         )
         for rate in (1, 3, 5)
     }
+    graph_hard_views = {
+        int(row["rate"]): row
+        for row in result["adaptive"]
+        if row["variant"] == "graph_hard"
+    }
+    low_budget = graph_hard_views[1]
+    high_budget = graph_hard_views[5]
     lines.extend([
         "",
         "`graph_no_filter` 相对 `graph_hard` 在 $\\Delta=1,3,5$ 下的攻击后 Micro-F1 差异依次为 "
         f"{100 * adaptive_gains[1]:+.2f}、{100 * adaptive_gains[3]:+.2f}、"
         f"{100 * adaptive_gains[5]:+.2f} pp，且最大配对 HetePRBCD 损失为 "
         f"{100 * candidate['max_heteprbcd_loss']:.2f} pp，未通过预注册门槛。因此论文方法版本冻结为 `graph_hard`；`han_semantic` 不进入同架构敏感性实验。",
+        "",
+        "正式三种子视图诊断进一步显示：从 $\\Delta=1$ 增至 5，feature 分支目标 Micro-F1 保持 "
+        f"{100 * low_budget['attacked_feature_target_micro_f1_mean']:.2f}，"
+        "topology 分支由 "
+        f"{100 * low_budget['attacked_topology_target_micro_f1_mean']:.2f} 降至 "
+        f"{100 * high_budget['attacked_topology_target_micro_f1_mean']:.2f}；"
+        "topology embedding 的 $L_2$ 漂移由 "
+        f"{low_budget['drift_topology_l2_mean_mean']:.2f} 增至 "
+        f"{high_budget['drift_topology_l2_mean_mean']:.2f}，攻击后视图分歧由 "
+        f"{100 * low_budget['attacked_view_disagreement_rate_mean']:.2f}% 增至 "
+        f"{100 * high_budget['attacked_view_disagreement_rate_mean']:.2f}%（clean 为 "
+        f"{100 * low_budget['clean_view_disagreement_rate_mean']:.2f}%）。这支持“DBLP 自适应攻击主要破坏拓扑视图”的机制解释。",
         "",
     ])
     return lines
@@ -1306,6 +1606,45 @@ def _ablation_table_lines(ablation, dataset):
     return lines
 
 
+def _ablation_significance_lines(rows):
+    labels = {
+        "no_cl": "w/o Cross-view CL",
+        "topology_only": "w/o Feature View",
+        "feature_only": "w/o Topology View",
+    }
+    lines = [
+        "**配对组件贡献**",
+        "",
+        "正效应表示 Full DVCL 更高；Attack Avg. 在每个训练种子内先跨 PRBCD/HetePRBCD 三档扰动率平均。每个数据集与条件构成一个包含三个消融比较的 Holm 校正族。",
+        "",
+        "| Dataset | Condition | Variant | $n$ | Effect (pp) [95% CI] | W/T/L | $p_{Holm}$ |",
+        "|---|---|---|---:|---:|---:|---:|",
+    ]
+    for dataset in ("acm", "dblp"):
+        for condition in ("clean", "all"):
+            for variant in ("no_cl", "topology_only", "feature_only"):
+                row = _lookup(
+                    rows, dataset=dataset, condition=condition,
+                    variant=variant,
+                )
+                lines.append(
+                    f"| {dataset.upper()} | "
+                    f"{'Clean' if condition == 'clean' else 'Attack Avg.'} | "
+                    f"{labels[variant]} | {row['n']} | "
+                    f"{row['effect_pp']:+.2f} "
+                    f"[{row['effect_ci_low_pp']:+.2f}, "
+                    f"{row['effect_ci_high_pp']:+.2f}] | "
+                    f"{row['wins']}/{row['ties']}/{row['losses']} | "
+                    f"{row['p_holm']:.3g} |"
+                )
+    lines.extend([
+        "",
+        "六个 Attack Avg. 比较均为 5/0/0，且配对均值 95% CI 均高于 0；但 $n=5$ 时双侧 Wilcoxon 的离散分辨率有限，经每族三个比较的 Holm 校正后均为 $p_{Holm}=0.188$。因此可报告稳定的正向效应与区间，不将其写成校正后显著。",
+        "",
+    ])
+    return lines
+
+
 def _aminer_document(aminer, aminer_audit, benchmark):
     lines = [
         "# AMiner 实验结果",
@@ -1471,7 +1810,10 @@ def _target_document(targets, adaptive, adaptive_significance, adaptive_ranks):
     return "\n".join(lines)
 
 
-def _write_figures(directory, multi, ranks, adaptive):
+def _write_figures(
+    directory, multi, poisoning_drops, ranks, adaptive,
+    topology_version, sensitivity,
+):
     import matplotlib
 
     matplotlib.use("Agg")
@@ -1507,6 +1849,36 @@ def _write_figures(directory, multi, ranks, adaptive):
             figure.tight_layout()
             _save_figure(figure, directory / f"{dataset}_{attack}_curve")
             plt.close(figure)
+
+    figure, axes = plt.subplots(2, 2, figsize=(11.2, 7.6), sharex=True)
+    for row_index, dataset in enumerate(("acm", "dblp")):
+        for column_index, attack in enumerate(("prbcd", "heteprbcd")):
+            axis = axes[row_index][column_index]
+            for model in models:
+                selected = sorted(
+                    (
+                        row for row in poisoning_drops
+                        if row["dataset"] == dataset
+                        and row["attack"] == attack
+                        and row["model"] == model
+                    ),
+                    key=lambda row: row["rate"],
+                )
+                axis.errorbar(
+                    [row["rate"] for row in selected],
+                    [row["drop_pp_mean"] for row in selected],
+                    yerr=[row["drop_pp_std"] for row in selected],
+                    marker="o", capsize=3, label=MODEL_LABELS[model],
+                )
+            axis.axhline(0, color="black", linewidth=0.8, alpha=0.5)
+            axis.set_title(f"{dataset.upper()} — {attack.upper()}")
+            axis.set_xlabel("Perturbation rate (%)")
+            axis.set_ylabel("Micro-F1 drop (pp)")
+            axis.grid(alpha=0.25)
+    axes[0][1].legend(frameon=False, fontsize=8)
+    figure.tight_layout()
+    _save_figure(figure, directory / "multi_seed_poisoning_drop")
+    plt.close(figure)
 
     figure, axis = plt.subplots(figsize=(6.2, 3.8))
     selected = sorted(
@@ -1554,10 +1926,148 @@ def _write_figures(directory, multi, ranks, adaptive):
     _save_figure(figure, directory / "adaptive_target_evasion_11model")
     plt.close(figure)
 
+    view_rows = sorted(
+        (
+            row for row in topology_version["adaptive"]
+            if row["variant"] == "graph_hard"
+        ),
+        key=lambda row: row["rate"],
+    )
+    budgets = [int(row["rate"]) for row in view_rows]
+    figure, axes = plt.subplots(1, 3, figsize=(13.2, 4.0))
+    for label, mean_field, std_field in (
+        ("Fused", "attacked_fused_target_micro_f1_mean",
+         "attacked_fused_target_micro_f1_std"),
+        ("Topology", "attacked_topology_target_micro_f1_mean",
+         "attacked_topology_target_micro_f1_std"),
+        ("Feature", "attacked_feature_target_micro_f1_mean",
+         "attacked_feature_target_micro_f1_std"),
+    ):
+        axes[0].errorbar(
+            budgets,
+            [100 * row[mean_field] for row in view_rows],
+            yerr=[100 * row[std_field] for row in view_rows],
+            marker="o", capsize=3, label=label,
+        )
+    axes[0].set_ylabel("Target Micro-F1 (%)")
+    axes[0].set_title("Branch performance")
+    axes[0].legend(frameon=False)
+    for label, mean_field, std_field in (
+        ("Topology", "drift_topology_l2_mean_mean",
+         "drift_topology_l2_mean_std"),
+        ("Feature", "drift_feature_l2_mean_mean",
+         "drift_feature_l2_mean_std"),
+    ):
+        axes[1].errorbar(
+            budgets,
+            [row[mean_field] for row in view_rows],
+            yerr=[row[std_field] for row in view_rows],
+            marker="o", capsize=3, label=label,
+        )
+    axes[1].set_ylabel("Embedding L2 drift")
+    axes[1].set_title("View representation drift")
+    axes[1].legend(frameon=False)
+    axes[2].errorbar(
+        budgets,
+        [100 * row["clean_view_disagreement_rate_mean"] for row in view_rows],
+        yerr=[
+            100 * row["clean_view_disagreement_rate_std"]
+            for row in view_rows
+        ],
+        marker="o", capsize=3, label="Clean",
+    )
+    axes[2].errorbar(
+        budgets,
+        [
+            100 * row["attacked_view_disagreement_rate_mean"]
+            for row in view_rows
+        ],
+        yerr=[
+            100 * row["attacked_view_disagreement_rate_std"]
+            for row in view_rows
+        ],
+        marker="o", capsize=3, label="Attacked",
+    )
+    axes[2].set_ylabel("View disagreement (%)")
+    axes[2].set_title("Prediction disagreement")
+    axes[2].legend(frameon=False)
+    for axis in axes:
+        axis.set_xlabel("Budget Δ")
+        axis.set_xticks(budgets)
+        axis.grid(alpha=0.25)
+    figure.suptitle("DBLP DVCL graph_hard adaptive view diagnosis", y=0.99)
+    figure.tight_layout(rect=(0, 0, 1, 0.94))
+    _save_figure(figure, directory / "dvcl_view_diagnosis")
+    plt.close(figure)
+
+    factor_order = ("lambda_h", "lambda_d", "tau", "k", "heads")
+    factor_labels = {
+        "lambda_h": r"$\lambda_h$",
+        "lambda_d": r"$\lambda_d$",
+        "tau": r"$\tau$",
+        "k": r"$k$",
+        "heads": r"$K$",
+    }
+    figure, axes = plt.subplots(2, 3, figsize=(12.2, 7.0))
+    for axis, factor in zip(axes.flat, factor_order):
+        for attack, label in (("clean", "Clean"), ("heteprbcd", "HetePRBCD 15%")):
+            selected = sorted(
+                (
+                    row for row in sensitivity["summary"]
+                    if row["factor"] == factor and row["attack"] == attack
+                ),
+                key=lambda row: row["value"],
+            )
+            axis.errorbar(
+                [row["value"] for row in selected],
+                [100 * row["micro_f1_mean"] for row in selected],
+                yerr=[100 * row["micro_f1_std"] for row in selected],
+                marker="o", capsize=3, label=label,
+            )
+        axis.set_xlabel(factor_labels[factor])
+        axis.set_ylabel("Micro-F1 (%)")
+        axis.grid(alpha=0.25)
+    axes[0][0].legend(frameon=False)
+    axes[1][2].axis("off")
+    figure.suptitle("DVCL hyperparameter sensitivity on DBLP")
+    figure.tight_layout()
+    _save_figure(figure, directory / "dvcl_hyperparameter_sensitivity")
+    plt.close(figure)
+
 
 def _save_figure(figure, base):
     figure.savefig(base.with_suffix(".png"), dpi=300)
     figure.savefig(base.with_suffix(".pdf"))
+
+
+def _audit_figure_outputs(directory, names):
+    files = []
+    issues = []
+    for name in names:
+        for suffix in (".png", ".pdf"):
+            path = directory / f"{name}{suffix}"
+            if not path.is_file() or path.stat().st_size <= 0:
+                issues.append(f"missing or empty figure: {path}")
+                continue
+            files.append({
+                "name": name,
+                "format": suffix[1:],
+                "path": str(path.resolve()),
+                "bytes": path.stat().st_size,
+                "sha256": file_sha256(path),
+            })
+    audit = {
+        "skipped": False,
+        "expected_visuals": len(names),
+        "expected_files": 2 * len(names),
+        "completed_files": len(files),
+        "issues": issues,
+        "files": files,
+        "ok": not issues and len(files) == 2 * len(names),
+    }
+    if not audit["ok"]:
+        raise ValueError("Paper figure audit failed: " + "; ".join(issues))
+    return audit
 
 
 if __name__ == "__main__":
