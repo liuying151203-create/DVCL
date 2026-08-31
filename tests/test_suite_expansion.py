@@ -441,6 +441,30 @@ def test_dvcl_hyperparameter_sensitivity_has_120_one_factor_runs():
     )
 
 
+def test_model_efficiency_has_99_profiled_physical_runs():
+    config = RUN_SUITE.load_config(
+        ROOT / "configs/protocols/model_efficiency_v1.yaml"
+    )
+    commands = list(RUN_SUITE.commands(config, "python", ROOT))
+    assert len(commands) == 99
+    assert {command[command.index("--dataset") + 1] for command in commands} == {
+        "acm", "dblp", "aminer",
+    }
+    assert {command[command.index("--model") + 1] for command in commands} == {
+        "han", "heterosage", "rohe", "heteroguard", "fastrohgcn",
+        "hgt", "magnn", "heco", "simplehgn", "hseco", "dvcl",
+    }
+    assert all("--profile-efficiency" in command for command in commands)
+    assert all(
+        command[command.index("--profile-inference-warmup") + 1] == "10"
+        for command in commands
+    )
+    assert all(
+        command[command.index("--profile-inference-repetitions") + 1] == "50"
+        for command in commands
+    )
+
+
 def test_cuda_oom_is_retried_without_retrying_other_failures():
     responses = iter([
         SimpleNamespace(returncode=RUN_SUITE.CUDA_OOM_EXIT_CODE),

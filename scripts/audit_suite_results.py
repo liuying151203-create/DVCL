@@ -10,7 +10,9 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from dvcl_bench.paths import ExperimentLayout
-from dvcl_bench.specs import AttackSpec, ExperimentSpec, ModelSpec, SeedSpec
+from dvcl_bench.specs import (
+    AttackSpec, ExperimentSpec, ModelSpec, ProfilingSpec, SeedSpec,
+)
 
 
 def parse_args():
@@ -51,6 +53,15 @@ def main() -> int:
             device=options["--device"],
             epochs=int(options["--epochs"]),
             patience=int(options["--patience"]),
+            profiling=ProfilingSpec(
+                enabled="--profile-efficiency" in command,
+                inference_warmup=int(
+                    options.get("--profile-inference-warmup", 0)
+                ),
+                inference_repetitions=int(
+                    options.get("--profile-inference-repetitions", 0)
+                ),
+            ),
         )
         expected.append(ExperimentLayout(ROOT).run_dir(spec))
 

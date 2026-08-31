@@ -239,6 +239,7 @@ def commands(config, python_bin, base_dir=ROOT):
                 config.get("device", "cuda:0"), model_config,
                 config.get("split_name_pattern", "paper_seed_{seed}").format(seed=split_seed),
                 config.get("checkpoint_pattern"),
+                config.get("profiling"),
             )
 
 
@@ -276,6 +277,7 @@ def ablation_commands(config, python_bin):
                     "split_name_pattern", config.get("split_name", "paper_seed_{seed}")
                 ).format(seed=split_seed),
                 config.get("checkpoint_pattern"),
+                config.get("profiling"),
             )
 
 
@@ -293,7 +295,7 @@ def resolve_model_config(model, base_dir: Path):
 def command_for(
     python_bin, protocol, dataset, model, backend, attack, rate,
     split_seed, attack_seed, train_seed, training, device, model_config, split_name,
-    checkpoint_pattern=None,
+    checkpoint_pattern=None, profiling=None,
 ):
     command = [
         python_bin,
@@ -341,6 +343,15 @@ def command_for(
         ])
     if attack.get("adaptive", False):
         command.append("--adaptive")
+    profiling = profiling or {}
+    if profiling.get("enabled", False):
+        command.extend([
+            "--profile-efficiency",
+            "--profile-inference-warmup",
+            str(profiling.get("inference_warmup", 0)),
+            "--profile-inference-repetitions",
+            str(profiling.get("inference_repetitions", 0)),
+        ])
     return command
 
 

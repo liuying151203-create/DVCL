@@ -426,6 +426,16 @@ def _audit_manifest(run_dir, spec, command, issues, hash_cache):
         issues.append(f"manifest schema mismatch: {run_dir}")
     expected_experiment = json.loads(json.dumps(asdict(spec)))
     actual_experiment = dict(manifest.get("experiment", {}))
+    default_profiling = {
+        "enabled": False,
+        "inference_warmup": 0,
+        "inference_repetitions": 0,
+    }
+    if (
+        "profiling" not in actual_experiment
+        and expected_experiment.get("profiling") == default_profiling
+    ):
+        actual_experiment["profiling"] = default_profiling
     expected_experiment.pop("device", None)
     actual_experiment.pop("device", None)
     if actual_experiment != expected_experiment:

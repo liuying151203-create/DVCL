@@ -19,7 +19,9 @@ from dvcl_bench.legacy import build_legacy_command, run_legacy
 from dvcl_bench.manifest import build_manifest, save_json
 from dvcl_bench.environment import resolve_device
 from dvcl_bench.paths import ExperimentLayout
-from dvcl_bench.specs import AttackSpec, ExperimentSpec, ModelSpec, SeedSpec
+from dvcl_bench.specs import (
+    AttackSpec, ExperimentSpec, ModelSpec, ProfilingSpec, SeedSpec,
+)
 
 
 CUDA_OOM_EXIT_CODE = 75
@@ -48,6 +50,9 @@ def parse_args():
     parser.add_argument("--patience", type=int, default=100)
     parser.add_argument("--python-bin", default=sys.executable)
     parser.add_argument("--model-config-json", default="{}")
+    parser.add_argument("--profile-efficiency", action="store_true")
+    parser.add_argument("--profile-inference-warmup", type=int, default=0)
+    parser.add_argument("--profile-inference-repetitions", type=int, default=0)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force", action="store_true")
     args, extra = parser.parse_known_args()
@@ -68,6 +73,11 @@ def build_spec(args, extra):
         device=args.device,
         epochs=args.epochs,
         patience=args.patience,
+        profiling=ProfilingSpec(
+            enabled=args.profile_efficiency,
+            inference_warmup=args.profile_inference_warmup,
+            inference_repetitions=args.profile_inference_repetitions,
+        ),
         extra_args=tuple(extra),
     )
 
@@ -193,6 +203,7 @@ def run_frozen_model(spec, inputs, run_dir):
         load_split_artifact,
     )
     from dvcl_bench.attacks import verify_attack
+    from dvcl_bench.profiling import profile_run
     if spec.model.backend == "native":
         from dvcl_bench.registry import build_model_config, get_native_trainer
     else:
@@ -245,19 +256,22 @@ def run_frozen_model(spec, inputs, run_dir):
     else:
         trainer = train_openhgnn
         extra = {"model_name": spec.model.name}
-    result = trainer(
-        clean=clean,
-        split=split,
-        attack=attack,
-        config=config,
-        train_seed=spec.seeds.train,
-        epochs=spec.epochs,
-        patience=spec.patience,
-        device=spec.device,
-        checkpoint_path=run_dir / "checkpoint.pt",
-        checkpoint_source=inputs.get("checkpoint"),
-        **extra,
-    )
+    with profile_run(spec.profiling, spec.device) as profiler:
+        result = trainer(
+            clean=clean,
+            split=split,
+            attack=attack,
+            config=config,
+            train_seed=spec.seeds.train,
+            epochs=spec.epochs,
+            patience=spec.patience,
+            device=spec.device,
+            checkpoint_path=run_dir / "checkpoint.pt",
+            checkpoint_source=inputs.get("checkpoint"),
+            **extra,
+        )
+    if profiler is not None:
+        result.diagnostics["efficiency"] = profiler.summary(result.history)
     write_history(result.history, run_dir / "history.csv")
     return {
         "protocol": spec.protocol,

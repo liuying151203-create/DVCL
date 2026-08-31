@@ -43,6 +43,7 @@ from .models.semantic import (
 from .models.baselines import HeteroGuard, HeteroSAGE
 from .models.rohe import RoHe
 from .models.fastrohgcn import FastRoHGCN
+from .profiling import profile_inference
 from .graph_adapter import hete_adjs_to_dgl, meta_path_adjacency, sparse_to_edge_index
 from .training import (
     DVCLTrainConfig,
@@ -502,6 +503,9 @@ def train_hseco(
         metrics = classification_metrics(
             test_logits[masks["test"]], labels[masks["test"]]
         )
+        profile_inference(
+            (semantic, node_model), lambda: node_model(features, last_graph)
+        )
         result = TrainingResult(
             metrics,
             [{"epoch": best_epoch, "checkpoint_reused": True}],
@@ -598,6 +602,9 @@ def train_hseco(
         test_logits = node_model(features, last_graph)
     metrics = classification_metrics(test_logits[masks["test"]], labels[masks["test"]])
     save_checkpoint(checkpoint_path, holder, config, stopper.best_epoch)
+    profile_inference(
+        (semantic, node_model), lambda: node_model(features, last_graph)
+    )
     result = TrainingResult(
         metrics, history, stopper.best_epoch, stopped_epoch,
         {"semantic_attention": last_attention.tolist()},
@@ -738,6 +745,16 @@ def train_dvcl(
             )
         metrics = classification_metrics(
             test_logits[masks["test"]], labels[masks["test"]]
+        )
+        profile_inference(
+            (semantic, model),
+            lambda: (
+                model.forward_with_topology_embedding(
+                    features, semantic_embedding, feature_graph
+                )[0]
+                if use_han_semantic_topology else
+                model(features, last_graph, feature_graph)[0]
+            ),
         )
         diagnostics = {
             "semantic_attention": (
@@ -983,6 +1000,16 @@ def train_dvcl(
         clean_view_state = _dvcl_view_state(model, test_logits, topology, feature)
     metrics = classification_metrics(test_logits[masks["test"]], labels[masks["test"]])
     save_checkpoint(checkpoint_path, holder, config, stopper.best_epoch)
+    profile_inference(
+        (semantic, model),
+        lambda: (
+            model.forward_with_topology_embedding(
+                features, semantic_embedding, feature_graph
+            )[0]
+            if use_han_semantic_topology else
+            model(features, last_graph, feature_graph)[0]
+        ),
+    )
     diagnostics = {
         "semantic_attention": (
             last_attention.tolist() if last_attention is not None else []
@@ -1078,6 +1105,7 @@ def _train_supervised(
         metrics = classification_metrics(
             test_logits[masks["test"]], labels[masks["test"]]
         )
+        profile_inference(model, forward)
         return TrainingResult(
             metrics,
             [{"epoch": best_epoch, "checkpoint_reused": True}],
@@ -1129,6 +1157,7 @@ def _train_supervised(
         test_logits = forward()
     metrics = classification_metrics(test_logits[masks["test"]], labels[masks["test"]])
     save_checkpoint(checkpoint_path, model, config, stopper.best_epoch)
+    profile_inference(model, forward)
     return TrainingResult(metrics, history, stopper.best_epoch, stopped_epoch)
 
 

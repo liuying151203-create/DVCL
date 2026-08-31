@@ -24,6 +24,7 @@ from .adapters import (
 )
 from .artifacts import AttackArtifact, CleanGraphArtifact, SplitArtifact
 from .graph_adapter import hete_adjs_to_dgl
+from .profiling import profile_inference
 from .integrations.openhgnn import (
     OPENHGNN_MODEL_HASHES,
     OPENHGNN_REVISION,
@@ -260,6 +261,7 @@ def _train_heco(
         metrics = classification_metrics(
             clean_logits[masks["test"]], labels[masks["test"]]
         )
+        profile_inference(pipeline, lambda: pipeline(graph))
         result = TrainingResult(
             metrics,
             [{"epoch": best_epoch, "checkpoint_reused": True}],
@@ -358,6 +360,7 @@ def _train_heco(
         clean_logits = pipeline.classifier(embeddings)
     metrics = classification_metrics(clean_logits[masks["test"]], labels[masks["test"]])
     save_checkpoint(checkpoint_path, pipeline, config, stopper.best_epoch)
+    profile_inference(pipeline, lambda: pipeline(graph))
     result = TrainingResult(metrics, history, stopper.best_epoch, stopped_epoch)
     result.diagnostics.update(_diagnostics("heco"))
     result.diagnostics.update({

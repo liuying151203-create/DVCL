@@ -125,6 +125,20 @@ def test_manifest_audit_accepts_device_migration(tmp_path, monkeypatch):
     assert issues == []
 
 
+def test_manifest_audit_accepts_legacy_manifest_without_profiling(
+    tmp_path, monkeypatch
+):
+    spec, run_dir, _ = _manifest_fixture(tmp_path, monkeypatch)
+    path = run_dir / "manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["experiment"].pop("profiling")
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    issues = []
+    audited = ANALYZER._audit_manifest(run_dir, spec, [], issues, {})
+    assert audited is not None
+    assert issues == []
+
+
 def test_manifest_audit_rejects_tampered_input(tmp_path, monkeypatch):
     spec, run_dir, clean = _manifest_fixture(tmp_path, monkeypatch)
     clean.write_bytes(b"tampered")

@@ -80,6 +80,27 @@ class ModelSpec:
 
 
 @dataclass(frozen=True)
+class ProfilingSpec:
+    enabled: bool = False
+    inference_warmup: int = 0
+    inference_repetitions: int = 0
+
+    def __post_init__(self) -> None:
+        if self.inference_warmup < 0:
+            raise ValueError("inference_warmup must be non-negative")
+        if self.enabled and self.inference_repetitions <= 0:
+            raise ValueError(
+                "profiling requires positive inference_repetitions"
+            )
+        if not self.enabled and (
+            self.inference_warmup != 0 or self.inference_repetitions != 0
+        ):
+            raise ValueError(
+                "disabled profiling cannot define warmup or repetitions"
+            )
+
+
+@dataclass(frozen=True)
 class ExperimentSpec:
     protocol: str
     dataset: str
@@ -90,6 +111,7 @@ class ExperimentSpec:
     device: str = "cuda:0"
     epochs: int = 200
     patience: int = 100
+    profiling: ProfilingSpec = field(default_factory=ProfilingSpec)
     extra_args: tuple = ()
 
     def __post_init__(self) -> None:
@@ -99,12 +121,15 @@ class ExperimentSpec:
             raise ValueError("epochs must be positive")
         if self.patience <= 0:
             raise ValueError("patience must be positive")
+        if self.profiling.enabled and self.attack.name != "clean":
+            raise ValueError("efficiency profiling supports clean runs only")
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any]) -> "ExperimentSpec":
         seeds = raw.get("seeds", {})
         attack = raw.get("attack", {})
         model = raw.get("model", {})
+        profiling = raw.get("profiling", {})
         return cls(
             protocol=str(raw.get("protocol", "dvcl_main")),
             dataset=str(raw["dataset"]).lower(),
@@ -130,5 +155,12 @@ class ExperimentSpec:
             device=str(raw.get("device", "cuda:0")),
             epochs=int(raw.get("epochs", 200)),
             patience=int(raw.get("patience", 100)),
+            profiling=ProfilingSpec(
+                enabled=bool(profiling.get("enabled", False)),
+                inference_warmup=int(profiling.get("inference_warmup", 0)),
+                inference_repetitions=int(
+                    profiling.get("inference_repetitions", 0)
+                ),
+            ),
             extra_args=tuple(str(value) for value in raw.get("extra_args", ())),
         )

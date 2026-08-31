@@ -281,6 +281,29 @@ python scripts/analyze_dvcl_hyperparameter_sensitivity.py
 - 结果支持“冻结参数在 DBLP 代表性 poisoning 条件下局部稳定”，但不触发换参，也不外推为自适应鲁棒性证据。
 - 结果见 `docs/dvcl-hyperparameter-sensitivity.md`，机器审计见 `outputs/analysis/dvcl_hyperparameter_sensitivity_v1/`。
 
+### 阶段 F4 预注册协议
+
+- 目的：在不改变模型定义和准确率协议的前提下，比较统一 11 模型的参数量、训练开销、完整图推理延迟与峰值显存，并报告既有自适应攻击的查询成本。
+- 数据集与规模：ACM、DBLP、AMiner 的 clean 条件，统一 11 模型，$s_t\in\{1,2,3\}$；共 $3\times11\times3=99$ 次物理训练。
+- 硬件公平性：全部运行在同一型号、同一编号的独占 Tesla V100 上串行执行，并记录 CUDA、Torch、DGL、GPU 名称和 Git 提交；禁止跨 GPU 并发计时。
+- 训练计时：从训练器开始执行到 checkpoint、最佳模型恢复和一次正式测试结束，包含模型要求的图预处理、模型构建、优化和早停，不包含 artifact 磁盘读取、攻击验证以及额外 profiling 重复前向。
+- 推理计时：使用最佳模型和已经构建好的静态图执行完整图前向；先预热 10 次，再进行 50 次 CUDA 同步测量，报告三种子的毫秒均值与样本标准差。
+- 参数与显存：参数量只统计 `requires_grad=True` 的张量；峰值显存使用训练器范围内的 CUDA `max_memory_allocated`，同时保留 reserved memory 供审计。
+- 查询成本：复用 `adaptive_target_evasion_v1` 的 99 次物理搜索和 297 个逻辑预算结果，按模型、数据集和 $\Delta$ 报告查询次数；旧结果没有公平墙钟计时，因此不伪造攻击耗时。
+- $K$ 容量解释：从 F3 的 $K\in\{1,2,4,8\}$ 完整 checkpoint 统计状态张量数，并要求 $K=4$ 与 F4 中 DVCL 可训练参数量严格一致后再形成容量表。
+- 验收：99/99 次运行完成；全部 manifest 来自单一干净提交、相同 GPU 和相同 profiling 配置；输入哈希、参数量跨种子不变量、正训练时间、50 次推理样本及正峰值显存全部通过审计。
+
+```bash
+source scripts/activate_gpu_env.sh
+python scripts/check_protocol_inputs.py \
+  --config configs/protocols/model_efficiency_v1.yaml
+python scripts/audit_efficiency_hardware.py --device cuda:4
+python scripts/run_suite.py \
+  --config configs/protocols/model_efficiency_v1.yaml \
+  --device cuda:4 --continue-on-error
+python scripts/analyze_model_efficiency.py
+```
+
 ## 9. 阶段 G：最终冻结
 
 - 重新运行结果汇总和文档生成器。
